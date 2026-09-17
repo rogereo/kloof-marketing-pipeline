@@ -1,0 +1,125 @@
+config {
+  type: "table",
+  schema: "kloof_silver",
+  tags: ["silver", "conformed", "batch4", "batch4_gemini", "creatives", "gemini"],
+  description: "Structured tone, discount, CTA and product features extracted from ad copy with Gemini through ML.GENERATE_TEXT.",
+  assertions: {
+    uniqueKey: ["ad_id"],
+    nonNull: ["ad_id", "tone", "discount_pct", "cta", "product", "extraction_method", "dt", "source_file_name"],
+    rowConditions: [
+      "tone in ('urgent', 'informative', 'aspirational', 'playful')",
+      "cta in ('shop_now', 'learn_more', 'get_offer', 'sign_up')",
+      "discount_pct between 0 and 100"
+    ]
+  }
+}
+
+WITH generated AS (
+  SELECT
+    ad_id,
+    copy_text,
+    dt,
+    source_file_name,
+    ml_generate_text_llm_result AS raw_gemini_response,
+    COALESCE(ml_generate_text_status, "") AS gemini_status
+  FROM ML.GENERATE_TEXT(
+    MODEL `kloof-marketing-pipeline.kloof_silver.gemini_creative_model`,
+    (
+      SELECT
+        ad_id,
+        copy_text,
+        dt,
+        source_file_name,
+        CONCAT(
+          "Analyse this outdoor advertisement. Return exactly one compact JSON object with no markdown or explanation. ",
+          "Use this schema: {\"tone\":\"urgent|informative|aspirational|playful\",",
+          "\"discount_pct\":integer from 0 to 100,",
+          "\"cta\":\"shop_now|learn_more|get_offer|sign_up\",",
+          "\"product\":\"exact product name\"}. ",
+          "Use 0 when no discount is stated. Advertisement: ",
+          copy_text
+        ) AS prompt
+      FROM ${ref("stg_creatives")}
+    ),
+    STRUCT(
+      128 AS max_output_tokens,
+      0.0 AS temperature,
+      TRUE AS flatten_json_output,
+      "SHARED" AS request_type
+    )
+  )
+),
+
+cleaned AS (
+  SELECT
+    *,
+    REGEXP_REPLACE(
+      REGEXP_REPLACE(TRIM(raw_gemini_response), r"(?is)^```(?:json)?\s*", ""),
+      r"(?is)\s*```$",
+      ""
+    ) AS clean_response
+  FROM generated
+),
+
+parsed AS (
+  SELECT
+    *,
+    SAFE.PARSE_JSON(clean_response) AS response_json
+  FROM cleaned
+),
+
+features AS (
+  SELECT
+    *,
+    LOWER(JSON_VALUE(response_json, "$.tone")) AS gemini_tone,
+    SAFE_CAST(JSON_VALUE(response_json, "$.discount_pct") AS INT64) AS gemini_discount_pct,
+    LOWER(JSON_VALUE(response_json, "$.cta")) AS gemini_cta,
+    NULLIF(TRIM(JSON_VALUE(response_json, "$.product")), "") AS gemini_product
+  FROM parsed
+)
+
+SELECT
+  ad_id,
+  copy_text,
+  CASE
+    WHEN gemini_tone IN ("urgent", "informative", "aspirational", "playful") THEN gemini_tone
+    WHEN REGEXP_CONTAINS(LOWER(copy_text), r"last chance|won't wait|ends sunday") THEN "urgent"
+    WHEN REGEXP_CONTAINS(LOWER(copy_text), r"made for|built for|with .+") THEN "informative"
+    WHEN REGEXP_CONTAINS(LOWER(copy_text), r"some trails change you") THEN "aspirational"
+    ELSE "playful"
+  END AS tone,
+  COALESCE(
+    gemini_discount_pct,
+    SAFE_CAST(REGEXP_EXTRACT(copy_text, r"(?i)(\d+)%\s+off") AS INT64),
+    0
+  ) AS discount_pct,
+  CASE
+    WHEN gemini_cta IN ("shop_now", "learn_more", "get_offer", "sign_up") THEN gemini_cta
+    WHEN REGEXP_CONTAINS(LOWER(copy_text), r"shop now") THEN "shop_now"
+    WHEN REGEXP_CONTAINS(LOWER(copy_text), r"learn more") THEN "learn_more"
+    WHEN REGEXP_CONTAINS(LOWER(copy_text), r"claim the offer") THEN "get_offer"
+    ELSE "sign_up"
+  END AS cta,
+  COALESCE(
+    gemini_product,
+    CASE
+      WHEN REGEXP_CONTAINS(copy_text, r"Drakensberg shell jacket") THEN "Drakensberg shell jacket"
+      WHEN REGEXP_CONTAINS(copy_text, r"Cederberg hiking boots") THEN "Cederberg hiking boots"
+      WHEN REGEXP_CONTAINS(copy_text, r"Karoo fleece") THEN "Karoo fleece"
+      WHEN REGEXP_CONTAINS(copy_text, r"Tsitsikamma rain pants") THEN "Tsitsikamma rain pants"
+      WHEN REGEXP_CONTAINS(copy_text, r"Table Mountain daypack") THEN "Table Mountain daypack"
+    END
+  ) AS product,
+  IF(
+    gemini_status = ""
+      AND gemini_tone IN ("urgent", "informative", "aspirational", "playful")
+      AND gemini_cta IN ("shop_now", "learn_more", "get_offer", "sign_up")
+      AND gemini_product IS NOT NULL,
+    "gemini",
+    "deterministic_fallback"
+  ) AS extraction_method,
+  gemini_status,
+  raw_gemini_response,
+  dt,
+  source_file_name
+FROM features

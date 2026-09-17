@@ -1,0 +1,102 @@
+config {
+  type: "table",
+  schema: "kloof_silver",
+  tags: ["silver", "conformed", "batch4", "batch4_core", "orders", "DQ03", "DQ06", "DQ07", "SH07", "SH08"],
+  description: "One row per genuine CRM order linked to the best matching session, campaign and ad. CRM is the sole revenue source.",
+  assertions: {
+    uniqueKey: ["order_id"],
+    nonNull: ["order_id", "customer_id", "customer_key", "order_timestamp_utc", "order_date", "attribution_method", "revenue", "dt", "source_file_name"],
+    rowConditions: [
+      "is_test_order = false",
+      "attribution_method in ('click_id', 'utm', 'unattributed')",
+      "revenue >= 0"
+    ]
+  }
+}
+
+WITH genuine_orders AS (
+  SELECT
+    o.*,
+    i.customer_key
+  FROM ${ref("stg_crm_orders")} AS o
+  JOIN ${ref("int_customer_identity")} AS i
+    USING (customer_id)
+  WHERE NOT o.is_test_order
+),
+
+candidates AS (
+  SELECT
+    o.*,
+    s.session_key,
+    s.user_pseudo_id,
+    s.ga_session_id,
+    s.session_start_utc,
+    s.session_end_utc,
+    s.campaign_id,
+    s.ad_id,
+    s.attributed_platform,
+    s.attribution_method AS session_attribution_method,
+    s.gclid,
+    s.fbclid,
+    s.utm_source,
+    s.utm_medium,
+    s.utm_campaign_name,
+    s.utm_content,
+    s.source_file_name AS session_source_file_name,
+    s.transaction_id = o.order_id AS exact_transaction_match
+  FROM genuine_orders AS o
+  LEFT JOIN ${ref("int_sessions")} AS s
+    ON s.transaction_id = o.order_id
+    OR (
+      s.customer_key = o.customer_key
+      AND s.session_start_utc BETWEEN TIMESTAMP_SUB(o.order_timestamp_utc, INTERVAL 1 DAY)
+                                  AND TIMESTAMP_ADD(o.order_timestamp_utc, INTERVAL 1 HOUR)
+    )
+),
+
+best_session AS (
+  SELECT *
+  FROM candidates
+  QUALIFY ROW_NUMBER() OVER (
+    PARTITION BY order_id
+    ORDER BY
+      exact_transaction_match DESC,
+      ABS(TIMESTAMP_DIFF(order_timestamp_utc, session_start_utc, SECOND)),
+      session_start_utc DESC
+  ) = 1
+)
+
+SELECT
+  order_id,
+  customer_id,
+  customer_key,
+  order_timestamp_utc,
+  order_date,
+  currency,
+  subtotal,
+  discount,
+  revenue,
+  status,
+  item_count,
+  updated_at_utc,
+  is_test_order,
+  session_key,
+  user_pseudo_id,
+  ga_session_id,
+  session_start_utc,
+  session_end_utc,
+  campaign_id,
+  ad_id,
+  attributed_platform,
+  COALESCE(session_attribution_method, "unattributed") AS attribution_method,
+  gclid,
+  fbclid,
+  utm_source,
+  utm_medium,
+  utm_campaign_name,
+  utm_content,
+  exact_transaction_match,
+  dt,
+  source_file_name,
+  session_source_file_name
+FROM best_session

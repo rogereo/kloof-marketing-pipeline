@@ -1,0 +1,60 @@
+config {
+  type: "table",
+  schema: "kloof_silver",
+  tags: ["silver", "conformed", "batch4", "batch4_core", "identity", "SH11", "DQ12"],
+  description: "One row per CRM customer ID mapped to a stable person-level customer key through email and phone hashes.",
+  assertions: {
+    uniqueKey: ["customer_id"],
+    nonNull: ["customer_id", "customer_key", "identity_method", "dt", "source_file_name"]
+  }
+}
+
+WITH phone_email_bridge AS (
+  SELECT
+    phone_hash,
+    MIN(email_hash) AS bridged_email_hash
+  FROM ${ref("stg_crm_customers")}
+  WHERE phone_hash IS NOT NULL
+    AND email_hash IS NOT NULL
+  GROUP BY phone_hash
+),
+
+resolved AS (
+  SELECT
+    c.customer_id,
+    c.email_hash,
+    c.phone_hash,
+    COALESCE(b.bridged_email_hash, c.email_hash, c.phone_hash) AS identity_hash,
+    CASE
+      WHEN b.bridged_email_hash IS NOT NULL AND c.email_hash IS NULL THEN "phone_to_email_bridge"
+      WHEN c.email_hash IS NOT NULL THEN "email"
+      ELSE "phone"
+    END AS identity_method,
+    c.city_standard,
+    c.created_at_utc,
+    c.created_date,
+    c.is_guest,
+    c.marketing_opt_in,
+    c.is_internal_customer,
+    c.dt,
+    c.source_file_name
+  FROM ${ref("stg_crm_customers")} AS c
+  LEFT JOIN phone_email_bridge AS b
+    USING (phone_hash)
+)
+
+SELECT
+  customer_id,
+  TO_HEX(SHA256(CONCAT("customer|", identity_hash))) AS customer_key,
+  email_hash,
+  phone_hash,
+  identity_method,
+  city_standard,
+  created_at_utc,
+  created_date,
+  is_guest,
+  marketing_opt_in,
+  is_internal_customer,
+  dt,
+  source_file_name
+FROM resolved

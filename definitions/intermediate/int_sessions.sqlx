@@ -1,0 +1,140 @@
+config {
+  type: "table",
+  schema: "kloof_silver",
+  tags: ["silver", "conformed", "batch4", "batch4_core", "sessions", "SH07", "SH08", "DQ08", "DQ10"],
+  description: "One row per non-internal web session with click-ID-first attribution and optional person identity.",
+  assertions: {
+    uniqueKey: ["session_key"],
+    nonNull: ["session_key", "user_pseudo_id", "ga_session_id", "session_start_utc", "session_date", "attribution_method", "dt", "source_file_name"],
+    rowConditions: [
+      "attribution_method in ('click_id', 'utm', 'unattributed')",
+      "is_internal_session = false",
+      "session_end_utc >= session_start_utc"
+    ]
+  }
+}
+
+WITH session_rollup AS (
+  SELECT
+    user_pseudo_id,
+    ga_session_id,
+    MIN(event_timestamp_utc) AS session_start_utc,
+    MAX(event_timestamp_utc) AS session_end_utc,
+    MIN(event_date) AS session_date,
+    ARRAY_AGG(city IGNORE NULLS ORDER BY event_timestamp_utc LIMIT 1)[SAFE_OFFSET(0)] AS city,
+    ARRAY_AGG(device_category IGNORE NULLS ORDER BY event_timestamp_utc LIMIT 1)[SAFE_OFFSET(0)] AS device_category,
+    ARRAY_AGG(operating_system IGNORE NULLS ORDER BY event_timestamp_utc LIMIT 1)[SAFE_OFFSET(0)] AS operating_system,
+    MAX(session_gclid) AS gclid,
+    MAX(session_dclid) AS dclid,
+    MAX(session_srsltid) AS srsltid,
+    MAX(session_fbclid) AS fbclid,
+    MAX(session_campaign_id) AS utm_campaign_id,
+    MAX(session_campaign_name) AS utm_campaign_name,
+    MAX(session_source) AS utm_source,
+    MAX(session_medium) AS utm_medium,
+    MAX(session_term) AS utm_term,
+    MAX(session_content) AS utm_content,
+    ARRAY_AGG(transaction_id IGNORE NULLS ORDER BY event_timestamp_utc LIMIT 1)[SAFE_OFFSET(0)] AS transaction_id,
+    LOGICAL_OR(is_internal_traffic) AS is_internal_session,
+    LOGICAL_OR(is_provisional) AS is_provisional,
+    COUNT(*) AS event_count,
+    SUM(COALESCE(engagement_time_msec, 0)) AS engagement_time_msec,
+    MAX(dt) AS dt,
+    ARRAY_AGG(source_file_name ORDER BY dt DESC, event_timestamp_utc DESC LIMIT 1)[OFFSET(0)] AS source_file_name
+  FROM ${ref("stg_ga4_events")}
+  GROUP BY user_pseudo_id, ga_session_id
+),
+
+direct_identity AS (
+  SELECT
+    s.user_pseudo_id,
+    s.ga_session_id,
+    o.customer_id,
+    i.customer_key
+  FROM session_rollup AS s
+  JOIN ${ref("stg_crm_orders")} AS o
+    ON s.transaction_id = o.order_id
+  JOIN ${ref("int_customer_identity")} AS i
+    USING (customer_id)
+),
+
+pseudo_identity AS (
+  SELECT
+    user_pseudo_id,
+    ARRAY_AGG(
+      STRUCT(customer_id, customer_key)
+      ORDER BY ga_session_id DESC
+      LIMIT 1
+    )[OFFSET(0)] AS identity
+  FROM direct_identity
+  GROUP BY user_pseudo_id
+),
+
+latest_meta_ad AS (
+  SELECT
+    ad_id,
+    ARRAY_AGG(
+      STRUCT(campaign_id, campaign_name, adset_id, adset_name)
+      ORDER BY insight_date DESC, pulled_at_utc DESC
+      LIMIT 1
+    )[OFFSET(0)] AS current_ad
+  FROM ${ref("stg_meta_ads")}
+  GROUP BY ad_id
+),
+
+enriched AS (
+  SELECT
+    TO_HEX(SHA256(CONCAT(s.user_pseudo_id, "|", CAST(s.ga_session_id AS STRING)))) AS session_key,
+    s.user_pseudo_id,
+    s.ga_session_id,
+    s.session_start_utc,
+    s.session_end_utc,
+    s.session_date,
+    s.city,
+    s.device_category,
+    s.operating_system,
+    COALESCE(d.customer_id, p.identity.customer_id) AS customer_id,
+    COALESCE(d.customer_key, p.identity.customer_key) AS customer_key,
+    s.gclid,
+    s.dclid,
+    s.srsltid,
+    s.fbclid,
+    s.utm_source,
+    s.utm_medium,
+    s.utm_campaign_id,
+    s.utm_campaign_name,
+    s.utm_term,
+    s.utm_content,
+    COALESCE(g.campaign_id, m.current_ad.campaign_id, s.utm_campaign_id) AS campaign_id,
+    COALESCE(g.ad_id, m.ad_id, s.utm_content) AS ad_id,
+    CASE
+      WHEN s.gclid IS NOT NULL OR s.dclid IS NOT NULL OR s.fbclid IS NOT NULL OR s.srsltid IS NOT NULL THEN "click_id"
+      WHEN s.utm_source IS NOT NULL OR s.utm_medium IS NOT NULL OR s.utm_campaign_name IS NOT NULL OR s.utm_content IS NOT NULL THEN "utm"
+      ELSE "unattributed"
+    END AS attribution_method,
+    CASE
+      WHEN s.gclid IS NOT NULL OR s.dclid IS NOT NULL OR g.gclid IS NOT NULL THEN "google"
+      WHEN s.fbclid IS NOT NULL OR m.ad_id IS NOT NULL THEN "meta"
+      ELSE LOWER(s.utm_source)
+    END AS attributed_platform,
+    s.transaction_id,
+    s.is_internal_session,
+    s.is_provisional,
+    s.event_count,
+    s.engagement_time_msec,
+    s.dt,
+    s.source_file_name
+  FROM session_rollup AS s
+  LEFT JOIN direct_identity AS d
+    USING (user_pseudo_id, ga_session_id)
+  LEFT JOIN pseudo_identity AS p
+    USING (user_pseudo_id)
+  LEFT JOIN ${ref("stg_google_clicks")} AS g
+    ON s.gclid = g.gclid
+  LEFT JOIN latest_meta_ad AS m
+    ON s.utm_content = m.ad_id
+)
+
+SELECT *
+FROM enriched
+WHERE NOT is_internal_session
