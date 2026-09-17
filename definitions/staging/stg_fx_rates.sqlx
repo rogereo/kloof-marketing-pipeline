@@ -1,0 +1,71 @@
+config {
+  type: "table",
+  schema: "kloof_silver",
+  tags: ["silver", "staging", "fx", "DQ11"],
+  description: "Daily USD/ZAR rates with the last known weekday rate carried forward over weekends.",
+  assertions: {
+    uniqueKey: ["rate_date"],
+    nonNull: ["rate_date", "base_currency", "quote_currency", "rate", "dt", "_FILE_NAME"],
+    rowConditions: ["rate > 0"]
+  }
+}
+
+WITH typed AS (
+  SELECT
+    SAFE_CAST(rate_date AS DATE) AS rate_date,
+    NULLIF(TRIM(base_currency), "") AS base_currency,
+    NULLIF(TRIM(quote_currency), "") AS quote_currency,
+    SAFE_CAST(rate AS NUMERIC) AS rate,
+    dt AS source_dt,
+    _FILE_NAME
+  FROM ${ref("fx_rates")}
+),
+
+deduplicated AS (
+  SELECT *
+  FROM typed
+  QUALIFY ROW_NUMBER() OVER (
+    PARTITION BY rate_date
+    ORDER BY source_dt DESC, _FILE_NAME DESC
+  ) = 1
+),
+
+bounds AS (
+  SELECT
+    MIN(source_dt) AS min_date,
+    MAX(source_dt) AS max_date
+  FROM typed
+),
+
+date_spine AS (
+  SELECT rate_date
+  FROM bounds,
+  UNNEST(GENERATE_DATE_ARRAY(min_date, max_date)) AS rate_date
+),
+
+joined AS (
+  SELECT
+    s.rate_date,
+    d.base_currency,
+    d.quote_currency,
+    d.rate,
+    d.source_dt,
+    d._FILE_NAME
+  FROM date_spine AS s
+  LEFT JOIN deduplicated AS d
+    USING (rate_date)
+)
+
+SELECT
+  rate_date,
+  LAST_VALUE(base_currency IGNORE NULLS) OVER day_window AS base_currency,
+  LAST_VALUE(quote_currency IGNORE NULLS) OVER day_window AS quote_currency,
+  LAST_VALUE(rate IGNORE NULLS) OVER day_window AS rate,
+  LAST_VALUE(source_dt IGNORE NULLS) OVER day_window AS rate_source_dt,
+  rate_date AS dt,
+  LAST_VALUE(_FILE_NAME IGNORE NULLS) OVER day_window AS _FILE_NAME
+FROM joined
+WINDOW day_window AS (
+  ORDER BY rate_date
+  ROWS BETWEEN UNBOUNDED PRECEDING AND CURRENT ROW
+)

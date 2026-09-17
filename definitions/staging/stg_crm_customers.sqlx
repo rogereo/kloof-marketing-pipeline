@@ -1,0 +1,69 @@
+config {
+  type: "table",
+  schema: "kloof_silver",
+  tags: ["silver", "staging", "crm", "DQ04", "DQ07", "DQ09", "DQ12", "SH11"],
+  description: "Latest CRM customer record with standardised city and SHA-256 identity hashes. No raw PII leaves bronze.",
+  assertions: {
+    uniqueKey: ["customer_id"],
+    nonNull: ["customer_id", "created_at_utc", "city_standard", "dt", "_FILE_NAME"],
+    rowConditions: [
+      "email_hash is not null or phone_hash is not null",
+      "city_standard in ('Cape Town', 'Johannesburg', 'Durban')"
+    ]
+  }
+}
+
+WITH source AS (
+  SELECT
+    NULLIF(TRIM(customer_id), "") AS customer_id,
+    NULLIF(LOWER(TRIM(email)), "") AS normalized_email,
+    NULLIF(REGEXP_REPLACE(phone, r"[^0-9]", ""), "") AS phone_digits,
+    LOWER(REGEXP_REPLACE(TRIM(city), r"[\s_-]+", " ")) AS city_raw_normalized,
+    SAFE_CAST(created_at AS TIMESTAMP) AS created_at_utc,
+    SAFE_CAST(is_guest AS BOOL) AS is_guest,
+    SAFE_CAST(marketing_opt_in AS BOOL) AS marketing_opt_in,
+    dt,
+    _FILE_NAME
+  FROM ${ref("crm_customers")}
+),
+
+normalized AS (
+  SELECT
+    * EXCEPT(phone_digits),
+    CASE
+      WHEN phone_digits IS NULL THEN NULL
+      WHEN STARTS_WITH(phone_digits, "0027") THEN CONCAT("+27", SUBSTR(phone_digits, 5))
+      WHEN STARTS_WITH(phone_digits, "27") THEN CONCAT("+", phone_digits)
+      WHEN STARTS_WITH(phone_digits, "0") THEN CONCAT("+27", SUBSTR(phone_digits, 2))
+      ELSE CONCAT("+27", phone_digits)
+    END AS normalized_phone,
+    SPLIT(normalized_email, "@")[SAFE_OFFSET(1)] AS email_domain
+  FROM source
+),
+
+latest AS (
+  SELECT *
+  FROM normalized
+  QUALIFY ROW_NUMBER() OVER (
+    PARTITION BY customer_id
+    ORDER BY dt DESC, created_at_utc DESC, _FILE_NAME DESC
+  ) = 1
+)
+
+SELECT
+  l.customer_id,
+  IF(l.normalized_email IS NULL, NULL, TO_HEX(SHA256(l.normalized_email))) AS email_hash,
+  IF(l.normalized_phone IS NULL, NULL, TO_HEX(SHA256(l.normalized_phone))) AS phone_hash,
+  m.city_standard,
+  l.created_at_utc,
+  DATE(l.created_at_utc, "Africa/Johannesburg") AS created_date,
+  l.is_guest,
+  l.marketing_opt_in,
+  d.email_domain IS NOT NULL AS is_internal_customer,
+  l.dt,
+  l._FILE_NAME
+FROM latest AS l
+LEFT JOIN ${ref("city_mapping")} AS m
+  USING (city_raw_normalized)
+LEFT JOIN ${ref("internal_domains")} AS d
+  USING (email_domain)

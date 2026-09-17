@@ -1,0 +1,33 @@
+config {
+  type: "table",
+  schema: "kloof_silver",
+  tags: ["silver", "staging", "crm"],
+  description: "Typed and deduplicated CRM order lines.",
+  assertions: {
+    uniqueKey: ["order_id", "sku"],
+    nonNull: ["order_id", "sku", "unit_price", "quantity", "dt", "_FILE_NAME"],
+    rowConditions: [
+      "unit_price >= 0",
+      "quantity > 0"
+    ]
+  }
+}
+
+WITH typed AS (
+  SELECT
+    NULLIF(TRIM(order_id), "") AS order_id,
+    NULLIF(TRIM(sku), "") AS sku,
+    NULLIF(TRIM(product_name), "") AS product_name,
+    SAFE_CAST(unit_price AS NUMERIC) AS unit_price,
+    SAFE_CAST(quantity AS INT64) AS quantity,
+    dt,
+    _FILE_NAME
+  FROM ${ref("crm_order_items")}
+)
+
+SELECT *
+FROM typed
+QUALIFY ROW_NUMBER() OVER (
+  PARTITION BY order_id, sku
+  ORDER BY dt DESC, _FILE_NAME DESC
+) = 1

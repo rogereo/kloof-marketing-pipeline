@@ -1,0 +1,12 @@
+config {
+  type: "table",
+  schema: "kloof_silver",
+  tags: ["silver", "seed", "DQ07"],
+  description: "Email domains that identify internal or QA customers.",
+  assertions: {
+    uniqueKey: ["email_domain"],
+    nonNull: ["email_domain"]
+  }
+}
+
+SELECT "kloofoutdoor.co.za" AS email_domain

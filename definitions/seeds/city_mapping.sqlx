@@ -1,0 +1,26 @@
+config {
+  type: "table",
+  schema: "kloof_silver",
+  tags: ["silver", "seed", "DQ09"],
+  description: "Reference mapping from normalised free-text city values to the three supported cities.",
+  assertions: {
+    uniqueKey: ["city_raw_normalized"],
+    nonNull: ["city_raw_normalized", "city_standard"]
+  }
+}
+
+SELECT *
+FROM UNNEST([
+  STRUCT("cape town" AS city_raw_normalized, "Cape Town" AS city_standard),
+  STRUCT("capetown" AS city_raw_normalized, "Cape Town" AS city_standard),
+  STRUCT("cpt" AS city_raw_normalized, "Cape Town" AS city_standard),
+  STRUCT("kaapstad" AS city_raw_normalized, "Cape Town" AS city_standard),
+  STRUCT("johannesburg" AS city_raw_normalized, "Johannesburg" AS city_standard),
+  STRUCT("joburg" AS city_raw_normalized, "Johannesburg" AS city_standard),
+  STRUCT("jhb" AS city_raw_normalized, "Johannesburg" AS city_standard),
+  STRUCT("jozi" AS city_raw_normalized, "Johannesburg" AS city_standard),
+  STRUCT("dbn" AS city_raw_normalized, "Durban" AS city_standard),
+  STRUCT("durban" AS city_raw_normalized, "Durban" AS city_standard),
+  STRUCT("durbs" AS city_raw_normalized, "Durban" AS city_standard),
+  STRUCT("ethekwini" AS city_raw_normalized, "Durban" AS city_standard)
+])
