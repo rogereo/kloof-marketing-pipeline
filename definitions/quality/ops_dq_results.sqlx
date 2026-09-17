@@ -1,0 +1,290 @@
+config {
+  type: "incremental",
+  schema: "kloof_ops",
+  tags: ["quality", "quality_batch2", "quality_monitoring"],
+  description: "Append-only DQ detection snapshots. Counts are derived from pipeline data; this model never reads planted truth.",
+  bigquery: {
+    partitionBy: "run_date",
+    clusterBy: ["dq_code"]
+  },
+  assertions: {
+    nonNull: ["run_id", "run_date", "dq_code", "source_name", "detection_unit", "detected_count", "affected_rows_this_run", "recorded_at"],
+    rowConditions: [
+      "detected_count >= 0",
+      "affected_rows_this_run >= 0"
+    ]
+  }
+}
+
+WITH crm_orders_raw AS (
+  SELECT
+    NULLIF(TRIM(order_id), "") AS order_id,
+    NULLIF(TRIM(customer_id), "") AS customer_id,
+    SAFE_CAST(revenue AS NUMERIC) AS revenue,
+    LOWER(NULLIF(TRIM(status), "")) AS status,
+    SAFE_CAST(updated_at AS TIMESTAMP) AS updated_at_utc,
+    dt,
+    _FILE_NAME AS source_file_name,
+    TO_JSON_STRING(STRUCT(
+      order_id, customer_id, order_ts, currency, subtotal, discount,
+      revenue, status, item_count, updated_at
+    )) AS raw_row
+  FROM ${ref("crm_orders")}
+),
+
+crm_customers_raw AS (
+  SELECT
+    NULLIF(TRIM(customer_id), "") AS customer_id,
+    NULLIF(LOWER(TRIM(email)), "") AS normalized_email,
+    LOWER(REGEXP_REPLACE(TRIM(city), r"[\s_-]+", " ")) AS normalized_city,
+    dt
+  FROM ${ref("crm_customers")}
+),
+
+ga4_extracted AS (
+  SELECT
+    PARSE_DATE("%Y%m%d", event_date) AS event_date,
+    event_timestamp,
+    event_name,
+    user_pseudo_id,
+    (SELECT value.int_value FROM UNNEST(event_params) WHERE key = "ga_session_id" LIMIT 1) AS ga_session_id,
+    COALESCE(
+      ecommerce.transaction_id,
+      (SELECT value.string_value FROM UNNEST(event_params) WHERE key = "transaction_id" LIMIT 1)
+    ) AS transaction_id,
+    COALESCE(
+      ecommerce.purchase_revenue,
+      (SELECT value.double_value FROM UNNEST(event_params) WHERE key = "value" LIMIT 1),
+      (SELECT value.float_value FROM UNNEST(event_params) WHERE key = "value" LIMIT 1),
+      CAST((SELECT value.int_value FROM UNNEST(event_params) WHERE key = "value" LIMIT 1) AS FLOAT64)
+    ) AS ga4_reported_value,
+    LOWER((SELECT value.string_value FROM UNNEST(event_params) WHERE key = "traffic_type" LIMIT 1)) AS traffic_type,
+    dt,
+    TO_HEX(SHA256(CONCAT(
+      user_pseudo_id, "|", CAST(event_timestamp AS STRING), "|", event_name, "|",
+      CAST((SELECT value.int_value FROM UNNEST(event_params) WHERE key = "ga_session_id" LIMIT 1) AS STRING)
+    ))) AS event_fingerprint
+  FROM ${ref("ga4_events")}
+),
+
+ga4_flagged AS (
+  SELECT
+    *,
+    COUNT(*) OVER (PARTITION BY event_fingerprint) AS fingerprint_count
+  FROM ga4_extracted
+),
+
+latest_crm_order AS (
+  SELECT order_id, revenue
+  FROM crm_orders_raw
+  WHERE order_id IS NOT NULL
+  QUALIFY ROW_NUMBER() OVER (
+    PARTITION BY order_id
+    ORDER BY updated_at_utc DESC, dt DESC, source_file_name DESC
+  ) = 1
+),
+
+customer_first_delivery AS (
+  SELECT customer_id, MIN(dt) AS first_customer_dt
+  FROM crm_customers_raw
+  WHERE customer_id IS NOT NULL
+  GROUP BY customer_id
+),
+
+customer_first_order AS (
+  SELECT customer_id, MIN(dt) AS first_order_dt
+  FROM crm_orders_raw
+  WHERE customer_id IS NOT NULL
+  GROUP BY customer_id
+),
+
+internal_customers AS (
+  SELECT DISTINCT customer_id
+  FROM crm_customers_raw
+  WHERE SPLIT(normalized_email, "@")[SAFE_OFFSET(1)] = "kloofoutdoor.co.za"
+),
+
+dq01_files AS (
+  SELECT
+    dt,
+    source_file_name,
+    COUNT(*) - COUNT(DISTINCT raw_row) AS duplicate_rows
+  FROM crm_orders_raw
+  GROUP BY dt, source_file_name
+),
+
+dq03_orders AS (
+  SELECT order_id
+  FROM crm_orders_raw
+  WHERE order_id IS NOT NULL
+  GROUP BY order_id
+  HAVING COUNT(DISTINCT updated_at_utc) > 1
+),
+
+dq07_keys AS (
+  SELECT customer_id AS record_key FROM internal_customers
+  UNION DISTINCT
+  SELECT order_id
+  FROM crm_orders_raw
+  WHERE revenue <= 1 OR customer_id IN (SELECT customer_id FROM internal_customers)
+),
+
+google_campaign_names AS (
+  SELECT campaign_id, COUNT(DISTINCT campaign_name) AS name_count
+  FROM ${ref("stg_google_ads_performance")}
+  WHERE campaign_id IS NOT NULL
+  GROUP BY campaign_id
+),
+
+fx_bounds AS (
+  SELECT MIN(dt) AS min_dt, MAX(dt) AS max_dt
+  FROM ${ref("fx_rates")}
+),
+
+fx_calendar AS (
+  SELECT calendar_date
+  FROM fx_bounds,
+  UNNEST(GENERATE_DATE_ARRAY(min_dt, max_dt)) AS calendar_date
+),
+
+fx_published AS (
+  SELECT DISTINCT SAFE_CAST(rate_date AS DATE) AS rate_date
+  FROM ${ref("fx_rates")}
+  WHERE SAFE_CAST(rate AS NUMERIC) IS NOT NULL
+),
+
+detectors AS (
+  SELECT
+    "DQ01" AS dq_code,
+    "crm_orders" AS source_name,
+    "duplicated rows" AS detection_unit,
+    CAST(SUM(duplicate_rows) AS INT64) AS detected_count,
+    MAX(dt) AS source_max_dt
+  FROM dq01_files
+
+  UNION ALL
+  SELECT
+    "DQ02", "ga4_events", "purchase orders",
+    COUNT(DISTINCT IF(
+      event_name = "purchase"
+      AND transaction_id IS NOT NULL
+      AND (event_date != dt OR fingerprint_count > 1),
+      transaction_id,
+      NULL
+    )),
+    MAX(dt)
+  FROM ga4_flagged
+
+  UNION ALL
+  SELECT "DQ03", "crm_orders", "orders", COUNT(DISTINCT d.order_id), MAX(o.dt)
+  FROM dq03_orders AS d
+  LEFT JOIN crm_orders_raw AS o USING (order_id)
+
+  UNION ALL
+  SELECT
+    "DQ04", "crm_customers", "customers",
+    COUNT(DISTINCT o.customer_id),
+    MAX(o.first_order_dt)
+  FROM customer_first_order AS o
+  LEFT JOIN customer_first_delivery AS c USING (customer_id)
+  WHERE c.first_customer_dt IS NULL OR c.first_customer_dt > o.first_order_dt
+
+  UNION ALL
+  SELECT
+    "DQ05", "meta_ads_insights_raw", "truncated lines",
+    COUNTIF(SAFE.PARSE_JSON(raw_line) IS NULL),
+    MAX(dt)
+  FROM ${ref("meta_ads_insights_raw")}
+
+  UNION ALL
+  SELECT
+    "DQ06", "ga4_events", "orders",
+    COUNT(DISTINCT g.transaction_id),
+    MAX(g.dt)
+  FROM ga4_extracted AS g
+  JOIN latest_crm_order AS o ON g.transaction_id = o.order_id
+  WHERE g.event_name = "purchase"
+    AND g.ga4_reported_value IS NOT NULL
+    AND o.revenue > 0
+    AND SAFE_DIVIDE(g.ga4_reported_value, CAST(o.revenue AS FLOAT64)) NOT BETWEEN 0.5 AND 2
+
+  UNION ALL
+  SELECT "DQ07", "crm_and_ga4", "orders + QA account", COUNT(*), MAX(dt)
+  FROM dq07_keys
+  CROSS JOIN (SELECT MAX(dt) AS dt FROM crm_orders_raw)
+
+  UNION ALL
+  SELECT
+    "DQ08", "ga4_events", "sessions",
+    COUNT(DISTINCT IF(
+      traffic_type = "internal",
+      TO_JSON_STRING(STRUCT(user_pseudo_id, ga_session_id)),
+      NULL
+    )),
+    MAX(dt)
+  FROM ga4_extracted
+
+  UNION ALL
+  SELECT
+    "DQ09", "crm_customers", "customers",
+    COUNT(DISTINCT IF(
+      normalized_city NOT IN ("cape town", "johannesburg", "durban"),
+      customer_id,
+      NULL
+    )),
+    MAX(dt)
+  FROM crm_customers_raw
+
+  UNION ALL
+  SELECT
+    "DQ10", "google_ads_performance_raw", "campaigns",
+    COUNTIF(name_count > 1),
+    (SELECT MAX(dt) FROM ${ref("google_ads_performance_raw")})
+  FROM google_campaign_names
+
+  UNION ALL
+  SELECT
+    "DQ11", "fx_rates", "days",
+    COUNTIF(p.rate_date IS NULL),
+    MAX(c.calendar_date)
+  FROM fx_calendar AS c
+  LEFT JOIN fx_published AS p ON c.calendar_date = p.rate_date
+
+  UNION ALL
+  SELECT
+    "DQ12", "crm_customers", "customers",
+    COUNT(DISTINCT IF(normalized_email IS NULL, customer_id, NULL)),
+    MAX(dt)
+  FROM crm_customers_raw
+),
+
+previous AS (
+  ${when(
+    incremental(),
+    `SELECT
+       dq_code,
+       ARRAY_AGG(detected_count ORDER BY recorded_at DESC LIMIT 1)[OFFSET(0)] AS detected_count
+     FROM ${self()}
+     GROUP BY dq_code`,
+    `SELECT CAST(NULL AS STRING) AS dq_code, CAST(NULL AS INT64) AS detected_count WHERE FALSE`
+  )}
+),
+
+run_context AS (
+  SELECT CURRENT_TIMESTAMP() AS run_id
+)
+
+SELECT
+  r.run_id,
+  DATE(r.run_id, "Africa/Johannesburg") AS run_date,
+  d.dq_code,
+  d.source_name,
+  d.detection_unit,
+  d.detected_count,
+  COALESCE(p.detected_count, 0) AS previous_detected_count,
+  GREATEST(d.detected_count - COALESCE(p.detected_count, 0), 0) AS affected_rows_this_run,
+  d.source_max_dt,
+  r.run_id AS recorded_at
+FROM detectors AS d
+LEFT JOIN previous AS p USING (dq_code)
+CROSS JOIN run_context AS r

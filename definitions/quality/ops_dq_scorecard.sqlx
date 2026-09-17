@@ -1,0 +1,56 @@
+config {
+  type: "table",
+  schema: "kloof_ops",
+  tags: ["quality", "quality_batch2", "quality_scorecard"],
+  description: "Detected-versus-planted DQ scorecard. This is the only pipeline model allowed to read kloof_truth.",
+  assertions: {
+    uniqueKey: ["dq_code"],
+    nonNull: ["dq_code", "detected_count", "planted_count", "difference", "status"]
+  }
+}
+
+WITH latest_detection AS (
+  SELECT
+    dq_code,
+    source_name,
+    detection_unit,
+    detected_count,
+    source_max_dt,
+    recorded_at
+  FROM ${ref("ops_dq_results")}
+  QUALIFY ROW_NUMBER() OVER (
+    PARTITION BY dq_code
+    ORDER BY recorded_at DESC
+  ) = 1
+),
+
+planted AS (
+  SELECT
+    issue_code AS dq_code,
+    CASE
+      WHEN issue_code = "DQ01" THEN SUM(COALESCE(SAFE_CAST(REGEXP_EXTRACT(detail, r"^(\d+)") AS INT64), 0))
+      WHEN issue_code = "DQ02" THEN COUNT(DISTINCT IF(NOT STARTS_WITH(record_key, "event_date="), record_key, NULL))
+      WHEN issue_code = "DQ08" THEN SUM(COALESCE(SAFE_CAST(REGEXP_EXTRACT(record_key, r"^(\d+)") AS INT64), 0))
+      ELSE COUNT(DISTINCT record_key)
+    END AS planted_count,
+    MIN(file_dt) AS first_planted_dt,
+    MAX(file_dt) AS last_planted_dt
+  FROM `kloof-marketing-pipeline.kloof_truth.dq_manifest`
+  GROUP BY issue_code
+)
+
+SELECT
+  p.dq_code,
+  d.source_name,
+  d.detection_unit,
+  d.detected_count,
+  p.planted_count,
+  d.detected_count - p.planted_count AS difference,
+  IF(d.detected_count = p.planted_count, "MATCHED", "MISMATCH") AS status,
+  p.first_planted_dt,
+  p.last_planted_dt,
+  d.source_max_dt,
+  d.recorded_at
+FROM planted AS p
+LEFT JOIN latest_detection AS d USING (dq_code)
+
