@@ -1,0 +1,11 @@
+config {
+  type: "table",
+  schema: "kloof_gold",
+  tags: ["gold", "gold_batch3", "ml", "evaluation"],
+  description: "Persisted holdout evaluation metrics for the customer PLTV boosted-tree model."
+}
+
+SELECT
+  CURRENT_TIMESTAMP() AS evaluated_at_utc,
+  *
+FROM ML.EVALUATE(MODEL ${ref("customer_pltv_model")})

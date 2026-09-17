@@ -1,0 +1,48 @@
+config {
+  type: "operations",
+  schema: "kloof_gold",
+  name: "customer_pltv_model",
+  hasOutput: true,
+  dependencies: ["mart_customer_features"],
+  tags: ["gold", "gold_batch3", "ml", "training"],
+  description: "Boosted-tree regression model trained on customers acquired on or before 2026-06-10 to predict completed CRM revenue in days 8-97."
+}
+
+CREATE OR REPLACE MODEL ${self()}
+OPTIONS (
+  model_type = "BOOSTED_TREE_REGRESSOR",
+  input_label_cols = ["future_value_90d"],
+  data_split_method = "RANDOM",
+  data_split_eval_fraction = 0.20,
+  max_iterations = 50,
+  early_stop = TRUE,
+  min_rel_progress = 0.001,
+  enable_global_explain = TRUE
+) AS
+SELECT
+  acquisition_month,
+  acquisition_iso_week,
+  COALESCE(city_standard, "Unknown") AS city_standard,
+  COALESCE(has_guest_identity, FALSE) AS has_guest_identity,
+  COALESCE(marketing_opt_in, FALSE) AS marketing_opt_in,
+  COALESCE(is_placeholder, FALSE) AS is_placeholder,
+  COALESCE(days_from_signup_to_first_order, -1) AS days_from_signup_to_first_order,
+  COALESCE(acquisition_platform, "unattributed") AS acquisition_platform,
+  COALESCE(acquisition_attribution_method, "unattributed") AS acquisition_attribution_method,
+  orders_7d,
+  completed_orders_7d,
+  refunded_orders_7d,
+  completed_revenue_7d,
+  COALESCE(avg_completed_order_value_7d, 0) AS avg_completed_order_value_7d,
+  discount_7d,
+  items_7d,
+  sessions_7d,
+  click_id_sessions_7d,
+  utm_sessions_7d,
+  distinct_campaigns_7d,
+  events_7d,
+  engagement_time_msec_7d,
+  COALESCE(first_device_category, "unknown") AS first_device_category,
+  future_value_90d
+FROM ${ref("mart_customer_features")}
+WHERE is_training_eligible
