@@ -1,0 +1,17 @@
+Mature cohort (acquired on or before 2026-06-10): 2241 customers
+  vip           n=  226  avg value days 8-97: R7,219
+  steady        n=  872  avg value days 8-97: R1,542
+  one_and_done  n= 1143  avg value days 8-97: R306
+
+campaign         spend new cust  claims  platform  actual   value one-time %
+G_BRAND        238,183      847    1561      8.01    6.33   12.56        26%
+G_GENERIC      210,119      373     500      2.62    2.24    4.93        44%
+G_SHOP         342,760      824    1258      4.45    3.53    7.33        34%
+M_AWARE        157,384      123     621      4.81    1.03    2.36        33%
+M_RETARGET     131,737      248    1369     12.51    4.98    5.85        32%
+M_WINTER       446,351     1449    2545      5.11    2.43    3.82        90%
+
+platform = what the ad platform reports | actual = real CRM revenue (paid clicks only)
+value = first-order revenue + expected value in days 8-97 of the customers acquired
+
+Totals: 10033 orders, 7854 platform claims, 4841 people

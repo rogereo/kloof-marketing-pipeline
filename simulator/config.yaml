@@ -1,0 +1,154 @@
+# Kloof Outdoor simulator config
+# Everything that shapes the fake world lives here, so you can change the
+# story without touching code.
+
+seed: 42
+start_date: 2026-03-20          # first simulated day (history the pLTV model learns from)
+dashboard_window_days: 30       # what the dashboard shows by default (informational)
+traffic_scale: 1.0              # multiplies ad clicks and organic visits; raise for more volume
+
+fx:
+  usd_zar_base: 18.2            # Meta reports spend in USD; this drives the daily rate
+
+cities:
+  - {name: Cape Town,    slug: cape_town,    lat: -33.93, lon: 18.42, elevation: 20,   share: 0.35}
+  - {name: Johannesburg, slug: johannesburg, lat: -26.20, lon: 28.05, elevation: 1753, share: 0.45}
+  - {name: Durban,       slug: durban,       lat: -29.86, lon: 31.03, elevation: 8,    share: 0.20}
+
+# Hidden customer types. The pipeline never sees these labels.
+value_types:
+  vip:          {daily_repeat_hazard: 0.040, items: [[1, 0.35], [2, 0.40], [3, 0.25]]}
+  steady:       {daily_repeat_hazard: 0.012, items: [[1, 0.70], [2, 0.30]]}
+  one_and_done: {daily_repeat_hazard: 0.001, items: [[1, 1.00]]}
+
+organic:
+  sessions_per_day: 220
+  conversion_rate: 0.02
+  source_mix: {organic: 0.65, direct: 0.35}
+  value_mix: {vip: 0.12, steady: 0.50, one_and_done: 0.38}
+
+repeat_source_mix: {direct: 0.40, email: 0.25, organic: 0.35}
+
+catalog:
+  - {id: SKU-JKT-01, name: Drakensberg shell jacket, price: 1899}
+  - {id: SKU-BOT-01, name: Cederberg hiking boots,   price: 1249}
+  - {id: SKU-FLC-01, name: Karoo fleece,             price: 699}
+  - {id: SKU-PNT-01, name: Tsitsikamma rain pants,   price: 899}
+  - {id: SKU-BAG-01, name: Table Mountain daypack,   price: 549}
+  - {id: SKU-SCK-01, name: Merino trail socks,       price: 249}
+
+campaigns:
+  - key: G_BRAND
+    platform: google
+    name: ZA_Search_Brand
+    daily_budget_zar: 1350
+    cpc_zar: 8.0
+    ctr: 0.09
+    cvr: 0.045
+    weather_sensitivity: 0.0
+    existing_click_share: 0.25
+    value_mix: {vip: 0.20, steady: 0.55, one_and_done: 0.25}
+    discounts: [0]
+    n_ads: 3
+  - key: G_SHOP
+    platform: google
+    name: ZA_Shopping_AllProducts
+    daily_budget_zar: 1950
+    cpc_zar: 8.7
+    ctr: 0.012
+    cvr: 0.025
+    weather_sensitivity: 0.2
+    existing_click_share: 0.15
+    value_mix: {vip: 0.13, steady: 0.53, one_and_done: 0.34}
+    discounts: [0, 15]
+    n_ads: 4
+  - key: G_GENERIC
+    platform: google
+    name: ZA_Search_Generic_Jackets
+    daily_budget_zar: 1200
+    cpc_zar: 11.5
+    ctr: 0.04
+    cvr: 0.02
+    weather_sensitivity: 0.6
+    existing_click_share: 0.10
+    value_mix: {vip: 0.10, steady: 0.45, one_and_done: 0.45}
+    discounts: [0, 15]
+    n_ads: 3
+  - key: M_WINTER
+    platform: meta
+    name: Winter Sale | Prospecting
+    daily_budget_zar: 2550
+    cpc_zar: 6.7
+    ctr: 0.011
+    cvr: 0.02
+    weather_sensitivity: 1.0
+    existing_click_share: 0.05
+    value_mix: {vip: 0.03, steady: 0.17, one_and_done: 0.80}
+    discounts: [30]
+    n_ads: 4
+  - key: M_RETARGET
+    platform: meta
+    name: Retargeting | Viewed Product
+    daily_budget_zar: 750
+    cpc_zar: 9.0
+    ctr: 0.02
+    cvr: 0.03
+    weather_sensitivity: 0.2
+    existing_click_share: 0.50
+    value_mix: {vip: 0.15, steady: 0.55, one_and_done: 0.30}
+    discounts: [0, 15]
+    n_ads: 3
+  - key: M_AWARE
+    platform: meta
+    name: Trail Stories | Awareness
+    daily_budget_zar: 900
+    cpc_zar: 5.4
+    ctr: 0.008
+    cvr: 0.005
+    weather_sensitivity: 0.0
+    existing_click_share: 0.10
+    value_mix: {vip: 0.12, steady: 0.50, one_and_done: 0.38}
+    discounts: [0]
+    n_ads: 3
+
+# A new creative that goes live on Friday's run, so the daily refresh shows a new file.
+scheduled_ads:
+  - campaign: M_WINTER
+    launch_date: 2026-09-17
+    tone: playful
+    discount_pct: 30
+    cta: get_offer
+    product: Tsitsikamma rain pants
+
+# The deliberate mess. Turn these up or down to change how hard the pipeline has to work.
+mess:
+  missing_click_id_rate: 0.18                 # click ID stripped from the landing URL
+  missing_utm_given_missing_click_rate: 0.45  # of those, UTM tags also missing
+  meta_restatement_days: 7                    # Meta keeps adding conversions for up to 7 days
+  meta_view_through_rate: 0.20                # Meta claims orders from people who only saw an ad
+  post_click_claim_rate: {google: 0.15, meta: 0.7}
+  post_click_window_days: {google: 30, meta: 7}
+  ga4_purchase_drop_rate: 0.06                # order happened, GA4 purchase event never fired
+  ga4_duplicate_purchase_rate: 0.02           # purchase event fired twice
+  guest_duplicate_customer_rate: 0.08         # same person, two CRM customer IDs
+  refund_rate: 0.03
+  google_schema_change_date: 2026-09-01       # Google Ads CSV gains a column from this date
+
+# Planted data quality issues. Codes match KNOWN_ISSUES.md and truth/dq_manifest/.
+# Each one is decided by its own seeded generator, so switching one off does not
+# change the rest of the world.
+dq:
+  DQ01_crm_duplicate_export_day_rate: 0.04       # orders.csv appended to itself on some days
+  DQ02_ga4_late_event_rate: 0.02                 # event lands in the next day's file
+  DQ02_ga4_very_late_event_rate: 0.005           # event lands two days later
+  DQ02_ga4_resent_event_rate: 0.005              # event sent on its day AND again next day
+  DQ03_refund_delay_days: [2, 10]                # refund appears as a new row days after the sale
+  DQ04_late_customer_record_rate: 0.03           # customer row exported a day after their first order
+  DQ05_meta_truncated_pull_rate: 0.05            # a Meta pull has one cut-off JSON line
+  DQ06_ga4_value_bug: {start: 2026-09-08, end: 2026-09-10, multiplier: 100}
+  DQ07_test_orders_per_week: 2                   # QA team places R1.00 orders in production
+  DQ08_internal_sessions_per_weekday: 15         # office staff browsing the live site
+  DQ09_city_variant_rate: 0.10                   # "JHB", "Joburg", "cape town " ...
+  DQ10_campaign_rename: {campaign: G_SHOP, date: 2026-07-01, new_name: ZA_PMax_AllProducts}
+  DQ11_fx_weekend_gaps: true                     # no FX rate published on weekends
+  DQ12_blank_guest_email_rate: 0.25              # share of duplicate guests with no email captured

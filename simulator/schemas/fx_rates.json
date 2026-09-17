@@ -1,0 +1,22 @@
+[
+  {
+    "name": "rate_date",
+    "type": "STRING",
+    "mode": "NULLABLE"
+  },
+  {
+    "name": "base_currency",
+    "type": "STRING",
+    "mode": "NULLABLE"
+  },
+  {
+    "name": "quote_currency",
+    "type": "STRING",
+    "mode": "NULLABLE"
+  },
+  {
+    "name": "rate",
+    "type": "STRING",
+    "mode": "NULLABLE"
+  }
+]

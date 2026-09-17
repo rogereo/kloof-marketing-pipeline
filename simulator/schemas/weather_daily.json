@@ -1,0 +1,91 @@
+[
+  {
+    "name": "latitude",
+    "type": "FLOAT",
+    "mode": "NULLABLE"
+  },
+  {
+    "name": "longitude",
+    "type": "FLOAT",
+    "mode": "NULLABLE"
+  },
+  {
+    "name": "generationtime_ms",
+    "type": "FLOAT",
+    "mode": "NULLABLE"
+  },
+  {
+    "name": "utc_offset_seconds",
+    "type": "INTEGER",
+    "mode": "NULLABLE"
+  },
+  {
+    "name": "timezone",
+    "type": "STRING",
+    "mode": "NULLABLE"
+  },
+  {
+    "name": "timezone_abbreviation",
+    "type": "STRING",
+    "mode": "NULLABLE"
+  },
+  {
+    "name": "elevation",
+    "type": "FLOAT",
+    "mode": "NULLABLE"
+  },
+  {
+    "name": "daily_units",
+    "type": "RECORD",
+    "mode": "NULLABLE",
+    "fields": [
+      {
+        "name": "time",
+        "type": "STRING",
+        "mode": "NULLABLE"
+      },
+      {
+        "name": "temperature_2m_max",
+        "type": "STRING",
+        "mode": "NULLABLE"
+      },
+      {
+        "name": "temperature_2m_min",
+        "type": "STRING",
+        "mode": "NULLABLE"
+      },
+      {
+        "name": "precipitation_sum",
+        "type": "STRING",
+        "mode": "NULLABLE"
+      }
+    ]
+  },
+  {
+    "name": "daily",
+    "type": "RECORD",
+    "mode": "NULLABLE",
+    "fields": [
+      {
+        "name": "time",
+        "type": "STRING",
+        "mode": "REPEATED"
+      },
+      {
+        "name": "temperature_2m_max",
+        "type": "FLOAT",
+        "mode": "REPEATED"
+      },
+      {
+        "name": "temperature_2m_min",
+        "type": "FLOAT",
+        "mode": "REPEATED"
+      },
+      {
+        "name": "precipitation_sum",
+        "type": "FLOAT",
+        "mode": "REPEATED"
+      }
+    ]
+  }
+]

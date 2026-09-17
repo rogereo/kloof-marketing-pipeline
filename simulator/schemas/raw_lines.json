@@ -1,0 +1,7 @@
+[
+  {
+    "name": "raw_line",
+    "type": "STRING",
+    "mode": "NULLABLE"
+  }
+]

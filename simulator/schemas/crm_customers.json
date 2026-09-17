@@ -1,0 +1,47 @@
+[
+  {
+    "name": "customer_id",
+    "type": "STRING",
+    "mode": "NULLABLE"
+  },
+  {
+    "name": "email",
+    "type": "STRING",
+    "mode": "NULLABLE"
+  },
+  {
+    "name": "first_name",
+    "type": "STRING",
+    "mode": "NULLABLE"
+  },
+  {
+    "name": "last_name",
+    "type": "STRING",
+    "mode": "NULLABLE"
+  },
+  {
+    "name": "phone",
+    "type": "STRING",
+    "mode": "NULLABLE"
+  },
+  {
+    "name": "city",
+    "type": "STRING",
+    "mode": "NULLABLE"
+  },
+  {
+    "name": "created_at",
+    "type": "STRING",
+    "mode": "NULLABLE"
+  },
+  {
+    "name": "is_guest",
+    "type": "STRING",
+    "mode": "NULLABLE"
+  },
+  {
+    "name": "marketing_opt_in",
+    "type": "STRING",
+    "mode": "NULLABLE"
+  }
+]

@@ -1,0 +1,32 @@
+[
+  {
+    "name": "segments_date",
+    "type": "STRING",
+    "mode": "NULLABLE"
+  },
+  {
+    "name": "click_view_gclid",
+    "type": "STRING",
+    "mode": "NULLABLE"
+  },
+  {
+    "name": "campaign_id",
+    "type": "STRING",
+    "mode": "NULLABLE"
+  },
+  {
+    "name": "ad_group_id",
+    "type": "STRING",
+    "mode": "NULLABLE"
+  },
+  {
+    "name": "ad_group_ad_ad_id",
+    "type": "STRING",
+    "mode": "NULLABLE"
+  },
+  {
+    "name": "click_view_area_of_interest_city",
+    "type": "STRING",
+    "mode": "NULLABLE"
+  }
+]

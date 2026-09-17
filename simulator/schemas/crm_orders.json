@@ -1,0 +1,52 @@
+[
+  {
+    "name": "order_id",
+    "type": "STRING",
+    "mode": "NULLABLE"
+  },
+  {
+    "name": "customer_id",
+    "type": "STRING",
+    "mode": "NULLABLE"
+  },
+  {
+    "name": "order_ts",
+    "type": "STRING",
+    "mode": "NULLABLE"
+  },
+  {
+    "name": "currency",
+    "type": "STRING",
+    "mode": "NULLABLE"
+  },
+  {
+    "name": "subtotal",
+    "type": "STRING",
+    "mode": "NULLABLE"
+  },
+  {
+    "name": "discount",
+    "type": "STRING",
+    "mode": "NULLABLE"
+  },
+  {
+    "name": "revenue",
+    "type": "STRING",
+    "mode": "NULLABLE"
+  },
+  {
+    "name": "status",
+    "type": "STRING",
+    "mode": "NULLABLE"
+  },
+  {
+    "name": "item_count",
+    "type": "STRING",
+    "mode": "NULLABLE"
+  },
+  {
+    "name": "updated_at",
+    "type": "STRING",
+    "mode": "NULLABLE"
+  }
+]

@@ -1,0 +1,16 @@
+code  issue                               records  unit              days
+DQ01  CRM orders exported twice               197  duplicated rows      4
+DQ02  GA4 events late or re-sent              305  purchase orders    179
+DQ03  Refund arrives as later update          273  orders             144
+DQ04  Customer record a day late              149  customers           99
+DQ05  Truncated Meta JSON line                 13  ad-days             13
+DQ06  GA4 purchase value x100                 222  orders               3
+DQ07  QA test orders in production             54  orders + QA acct    53
+DQ08  Internal staff traffic                 1973  sessions           128
+DQ09  Free-text city variants                 505  customers          168
+DQ10  Campaign renamed, same ID                 1  campaign             1
+DQ11  No FX rate on weekends                   52  days                52
+DQ12  Blank email on guest record              90  customers           71
+
+DQ02 also moved or re-sent 20,902 GA4 events of all types.
+All 12 issues present.
