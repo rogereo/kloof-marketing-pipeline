@@ -1,0 +1,22 @@
+Kloof Outdoor Bronze Validation
+Validation date: 2026-03-20
+
+table_name                    local_rows  bq_rows  local_files  bq_files  status
+creative_copy_raw                     12       12           12        12  PASS
+crm_customers                         23       23            1         1  PASS
+crm_order_items                       35       35            1         1  PASS
+crm_orders                            56       56            1         1  PASS
+fx_rates                               1        1            1         1  PASS
+ga4_events                          3601     3601            1         1  PASS
+google_ads_clicks                    455      455            1         1  PASS
+google_ads_performance_raw             7        7            1         1  PASS
+meta_ads_insights_raw                  6        6            1         1  PASS
+weather_daily                          3        3            3         3  PASS
+
+Result: 10 of 10 tables passed row-count and source-file lineage checks.
+
+PII security:
+- crm_customers is a BigLake external table using connection kloof_vertex_ai.
+- Row policy pipeline_service_account_only grants TRUE access only to
+  dataform-runner@kloof-marketing-pipeline.iam.gserviceaccount.com.
+- The project-owner user query returned 0 visible customer rows after the policy was applied.
