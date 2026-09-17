@@ -1,0 +1,26 @@
+Gold Batch 2 — Customer Feature Mart Validation
+================================================
+
+Validation date: 2026-09-17
+Project: kloof-marketing-pipeline
+Dataset: kloof_gold
+Model: mart_customer_features
+Validation query: sql/gold/validate_customer_features.sql
+
+check_name                              observed                   expected       status
+90-day label window reconciles          4806332.45/4806332.45      equal          PASS
+Customer feature keys unique            0                          0              PASS
+Feature metrics valid                   0                          0 invalid      PASS
+Feature revenue window reconciles       5465254.6/5465254.6        equal          PASS
+Feature rows match acquired customers   4841                       4841           PASS
+No raw PII columns                      0                          0              PASS
+Scoring-only cohort present             2600                       > 0            PASS
+Source lineage retained                 0                          0 missing      PASS
+Training cohort present                 2241                       > 0            PASS
+Training cutoff enforced                0                          0 invalid      PASS
+
+Summary: 10/10 checks passed.
+
+Feature window: acquisition date through day 7.
+Label window: completed CRM revenue from days 8 through 97.
+Training eligibility cutoff: acquisition date on or before 2026-06-10.
