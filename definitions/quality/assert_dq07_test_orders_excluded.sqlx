@@ -1,0 +1,8 @@
+config { type: "assertion", schema: "kloof_ops", tags: ["quality", "quality_batch1", "DQ07"] }
+
+SELECT order_id, customer_id
+FROM ${ref("fct_orders")}
+WHERE is_test_order
+   OR customer_key IN (
+     SELECT customer_key FROM ${ref("dim_customer")} WHERE is_internal_customer
+   )

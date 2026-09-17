@@ -1,0 +1,11 @@
+config { type: "assertion", schema: "kloof_ops", tags: ["quality", "quality_batch1", "DQ11"] }
+
+SELECT CAST(rate_date AS STRING) AS failed_key, "missing_or_invalid_rate" AS failure_reason
+FROM ${ref("stg_fx_rates")}
+WHERE rate IS NULL OR rate <= 0
+
+UNION ALL
+
+SELECT CONCAT(CAST(insight_date AS STRING), "|", ad_id), "meta_spend_missing"
+FROM ${ref("stg_meta_ads")}
+WHERE spend_zar IS NULL

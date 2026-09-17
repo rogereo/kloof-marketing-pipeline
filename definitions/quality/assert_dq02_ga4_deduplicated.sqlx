@@ -1,0 +1,14 @@
+config { type: "assertion", schema: "kloof_ops", tags: ["quality", "quality_batch1", "DQ02"] }
+
+SELECT "event_fingerprint" AS failed_key, event_fingerprint AS key_value, COUNT(*) AS row_count
+FROM ${ref("stg_ga4_events")}
+GROUP BY event_fingerprint
+HAVING COUNT(*) > 1
+
+UNION ALL
+
+SELECT "purchase_transaction_id", transaction_id, COUNT(*)
+FROM ${ref("stg_ga4_events")}
+WHERE event_name = "purchase" AND transaction_id IS NOT NULL
+GROUP BY transaction_id
+HAVING COUNT(*) > 1

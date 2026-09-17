@@ -1,0 +1,16 @@
+config { type: "assertion", schema: "kloof_ops", tags: ["quality", "quality_batch1", "reconciliation"] }
+
+WITH metrics AS (
+  SELECT
+    (SELECT COUNT(*) FROM ${ref("int_orders_attributed")}) AS silver_orders,
+    (SELECT COUNT(*) FROM ${ref("fct_orders")}) AS gold_orders,
+    (SELECT SUM(IF(status = "completed", revenue, 0)) FROM ${ref("int_orders_attributed")}) AS silver_revenue,
+    (SELECT SUM(completed_revenue) FROM ${ref("fct_orders")}) AS gold_revenue,
+    (SELECT SUM(cost_zar) FROM ${ref("stg_google_ads_performance")})
+      + (SELECT SUM(spend_zar) FROM ${ref("stg_meta_ads")}) AS silver_spend,
+    (SELECT SUM(spend_zar) FROM ${ref("fct_ad_spend_daily")}) AS gold_spend
+)
+SELECT * FROM metrics
+WHERE silver_orders != gold_orders
+   OR ABS(silver_revenue - gold_revenue) > 0.01
+   OR ABS(silver_spend - gold_spend) > 0.01

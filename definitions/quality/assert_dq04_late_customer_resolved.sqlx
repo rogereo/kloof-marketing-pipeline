@@ -1,0 +1,7 @@
+config { type: "assertion", schema: "kloof_ops", tags: ["quality", "quality_batch1", "DQ04"] }
+
+SELECT o.order_id, o.customer_id, o.order_date
+FROM ${ref("fct_orders")} AS o
+JOIN ${ref("int_customer_identity")} AS i USING (customer_id)
+WHERE i.is_placeholder
+  AND o.order_date < DATE_SUB((SELECT MAX(order_date) FROM ${ref("fct_orders")}), INTERVAL 2 DAY)

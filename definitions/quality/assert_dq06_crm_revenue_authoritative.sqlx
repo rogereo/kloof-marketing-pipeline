@@ -1,0 +1,13 @@
+config { type: "assertion", schema: "kloof_ops", tags: ["quality", "quality_batch1", "DQ06"] }
+
+WITH silver AS (
+  SELECT SUM(IF(status = "completed", revenue, 0)) AS revenue
+  FROM ${ref("int_orders_attributed")}
+),
+gold AS (
+  SELECT SUM(completed_revenue) AS revenue
+  FROM ${ref("fct_orders")}
+)
+SELECT silver.revenue AS silver_revenue, gold.revenue AS gold_revenue
+FROM silver CROSS JOIN gold
+WHERE ABS(silver.revenue - gold.revenue) > 0.01

@@ -1,0 +1,13 @@
+config { type: "assertion", schema: "kloof_ops", tags: ["quality", "quality_batch1", "DQ12"] }
+
+SELECT "missing_customer_key" AS failure_reason, customer_id AS failed_key
+FROM ${ref("int_customer_identity")}
+WHERE customer_key IS NULL
+
+UNION ALL
+
+SELECT "phone_maps_to_multiple_people", phone_hash
+FROM ${ref("int_customer_identity")}
+WHERE phone_hash IS NOT NULL
+GROUP BY phone_hash
+HAVING COUNT(DISTINCT customer_key) > 1

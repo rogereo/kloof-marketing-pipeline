@@ -1,0 +1,6 @@
+config { type: "assertion", schema: "kloof_ops", tags: ["quality", "quality_batch1", "DQ09"] }
+
+SELECT customer_id, city_standard
+FROM ${ref("stg_crm_customers")}
+WHERE city_standard IS NULL
+   OR city_standard NOT IN ("Cape Town", "Johannesburg", "Durban")

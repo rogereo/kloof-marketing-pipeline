@@ -1,0 +1,7 @@
+config { type: "assertion", schema: "kloof_ops", tags: ["quality", "quality_batch1", "DQ10"] }
+
+SELECT platform, campaign_id, COUNT(*) AS current_rows
+FROM ${ref("dim_campaign")}
+GROUP BY platform, campaign_id
+HAVING COUNT(*) != 1
+   OR COUNTIF(current_campaign_name IS NULL) > 0

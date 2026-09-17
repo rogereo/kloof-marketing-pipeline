@@ -1,0 +1,5 @@
+config { type: "assertion", schema: "kloof_ops", tags: ["quality", "quality_batch1", "DQ08"] }
+
+SELECT session_key
+FROM ${ref("fct_sessions")}
+WHERE is_internal_session
