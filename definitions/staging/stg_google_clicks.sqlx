@@ -5,7 +5,7 @@ config {
   description: "Typed Google Ads click view at one row per gclid.",
   assertions: {
     uniqueKey: ["gclid"],
-    nonNull: ["click_date", "gclid", "campaign_id", "ad_id", "dt", "_FILE_NAME"]
+    nonNull: ["click_date", "gclid", "campaign_id", "ad_id", "dt", "source_file_name"]
   }
 }
 
@@ -18,7 +18,7 @@ WITH typed AS (
     NULLIF(TRIM(ad_group_ad_ad_id), "") AS ad_id,
     NULLIF(TRIM(click_view_area_of_interest_city), "") AS area_of_interest_city,
     dt,
-    _FILE_NAME
+    _FILE_NAME AS source_file_name
   FROM ${ref("google_ads_clicks")}
 )
 
@@ -26,5 +26,5 @@ SELECT *
 FROM typed
 QUALIFY ROW_NUMBER() OVER (
   PARTITION BY gclid
-  ORDER BY dt DESC, _FILE_NAME DESC
+  ORDER BY dt DESC, source_file_name DESC
 ) = 1

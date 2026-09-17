@@ -5,7 +5,7 @@ config {
   description: "Typed and deduplicated CRM order lines.",
   assertions: {
     uniqueKey: ["order_id", "sku"],
-    nonNull: ["order_id", "sku", "unit_price", "quantity", "dt", "_FILE_NAME"],
+    nonNull: ["order_id", "sku", "unit_price", "quantity", "dt", "source_file_name"],
     rowConditions: [
       "unit_price >= 0",
       "quantity > 0"
@@ -21,7 +21,7 @@ WITH typed AS (
     SAFE_CAST(unit_price AS NUMERIC) AS unit_price,
     SAFE_CAST(quantity AS INT64) AS quantity,
     dt,
-    _FILE_NAME
+    _FILE_NAME AS source_file_name
   FROM ${ref("crm_order_items")}
 )
 
@@ -29,5 +29,5 @@ SELECT *
 FROM typed
 QUALIFY ROW_NUMBER() OVER (
   PARTITION BY order_id, sku
-  ORDER BY dt DESC, _FILE_NAME DESC
+  ORDER BY dt DESC, source_file_name DESC
 ) = 1

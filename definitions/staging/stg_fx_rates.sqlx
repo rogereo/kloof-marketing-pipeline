@@ -5,7 +5,7 @@ config {
   description: "Daily USD/ZAR rates with the last known weekday rate carried forward over weekends.",
   assertions: {
     uniqueKey: ["rate_date"],
-    nonNull: ["rate_date", "base_currency", "quote_currency", "rate", "dt", "_FILE_NAME"],
+    nonNull: ["rate_date", "base_currency", "quote_currency", "rate", "dt", "source_file_name"],
     rowConditions: ["rate > 0"]
   }
 }
@@ -17,7 +17,7 @@ WITH typed AS (
     NULLIF(TRIM(quote_currency), "") AS quote_currency,
     SAFE_CAST(rate AS NUMERIC) AS rate,
     dt AS source_dt,
-    _FILE_NAME
+    _FILE_NAME AS source_file_name
   FROM ${ref("fx_rates")}
 ),
 
@@ -26,7 +26,7 @@ deduplicated AS (
   FROM typed
   QUALIFY ROW_NUMBER() OVER (
     PARTITION BY rate_date
-    ORDER BY source_dt DESC, _FILE_NAME DESC
+    ORDER BY source_dt DESC, source_file_name DESC
   ) = 1
 ),
 
@@ -50,7 +50,7 @@ joined AS (
     d.quote_currency,
     d.rate,
     d.source_dt,
-    d._FILE_NAME
+    d.source_file_name
   FROM date_spine AS s
   LEFT JOIN deduplicated AS d
     USING (rate_date)
@@ -63,7 +63,7 @@ SELECT
   LAST_VALUE(rate IGNORE NULLS) OVER day_window AS rate,
   LAST_VALUE(source_dt IGNORE NULLS) OVER day_window AS rate_source_dt,
   rate_date AS dt,
-  LAST_VALUE(_FILE_NAME IGNORE NULLS) OVER day_window AS _FILE_NAME
+  LAST_VALUE(source_file_name IGNORE NULLS) OVER day_window AS source_file_name
 FROM joined
 WINDOW day_window AS (
   ORDER BY rate_date

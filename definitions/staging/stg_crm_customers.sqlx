@@ -5,7 +5,7 @@ config {
   description: "Latest CRM customer record with standardised city and SHA-256 identity hashes. No raw PII leaves bronze.",
   assertions: {
     uniqueKey: ["customer_id"],
-    nonNull: ["customer_id", "created_at_utc", "city_standard", "dt", "_FILE_NAME"],
+    nonNull: ["customer_id", "created_at_utc", "city_standard", "dt", "source_file_name"],
     rowConditions: [
       "email_hash is not null or phone_hash is not null",
       "city_standard in ('Cape Town', 'Johannesburg', 'Durban')"
@@ -23,7 +23,7 @@ WITH source AS (
     SAFE_CAST(is_guest AS BOOL) AS is_guest,
     SAFE_CAST(marketing_opt_in AS BOOL) AS marketing_opt_in,
     dt,
-    _FILE_NAME
+    _FILE_NAME AS source_file_name
   FROM ${ref("crm_customers")}
 ),
 
@@ -46,7 +46,7 @@ latest AS (
   FROM normalized
   QUALIFY ROW_NUMBER() OVER (
     PARTITION BY customer_id
-    ORDER BY dt DESC, created_at_utc DESC, _FILE_NAME DESC
+    ORDER BY dt DESC, created_at_utc DESC, source_file_name DESC
   ) = 1
 )
 
@@ -61,7 +61,7 @@ SELECT
   l.marketing_opt_in,
   d.email_domain IS NOT NULL AS is_internal_customer,
   l.dt,
-  l._FILE_NAME
+  l.source_file_name
 FROM latest AS l
 LEFT JOIN ${ref("city_mapping")} AS m
   USING (city_raw_normalized)

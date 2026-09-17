@@ -5,7 +5,7 @@ config {
   description: "Latest typed CRM order version after exact-duplicate removal. QA orders are flagged for exclusion from facts.",
   assertions: {
     uniqueKey: ["order_id"],
-    nonNull: ["order_id", "customer_id", "order_timestamp_utc", "order_date", "updated_at_utc", "dt", "_FILE_NAME"],
+    nonNull: ["order_id", "customer_id", "order_timestamp_utc", "order_date", "updated_at_utc", "dt", "source_file_name"],
     rowConditions: [
       "revenue >= 0",
       "status in ('completed', 'refunded')"
@@ -26,7 +26,7 @@ WITH typed AS (
     SAFE_CAST(item_count AS INT64) AS item_count,
     SAFE_CAST(updated_at AS TIMESTAMP) AS updated_at_utc,
     dt,
-    _FILE_NAME
+    _FILE_NAME AS source_file_name
   FROM ${ref("crm_orders")}
 ),
 
@@ -45,7 +45,7 @@ exact_deduplicated AS (
       status,
       item_count,
       updated_at_utc
-    ORDER BY dt DESC, _FILE_NAME DESC
+    ORDER BY dt DESC, source_file_name DESC
   ) = 1
 ),
 
@@ -54,7 +54,7 @@ latest_version AS (
   FROM exact_deduplicated
   QUALIFY ROW_NUMBER() OVER (
     PARTITION BY order_id
-    ORDER BY updated_at_utc DESC, dt DESC, _FILE_NAME DESC
+    ORDER BY updated_at_utc DESC, dt DESC, source_file_name DESC
   ) = 1
 )
 
@@ -72,7 +72,7 @@ SELECT
   o.updated_at_utc,
   COALESCE(c.is_internal_customer, FALSE) OR o.revenue <= 1 AS is_test_order,
   o.dt,
-  o._FILE_NAME
+  o.source_file_name
 FROM latest_version AS o
 LEFT JOIN ${ref("stg_crm_customers")} AS c
   USING (customer_id)
