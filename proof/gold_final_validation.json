@@ -1,0 +1,106 @@
+[{
+  "check_name": "Acquisition creative features retained",
+  "observed": "0",
+  "expected": "0 missing",
+  "status": "PASS"
+}, {
+  "check_name": "Attributed CRM revenue reconciles",
+  "observed": "4271230.8/4271230.8",
+  "expected": "equal",
+  "status": "PASS"
+}, {
+  "check_name": "Campaign claimed revenue reconciles",
+  "observed": "8545346.955652/8545346.955652",
+  "expected": "equal",
+  "status": "PASS"
+}, {
+  "check_name": "Campaign creative drivers retained",
+  "observed": "0",
+  "expected": "0 missing",
+  "status": "PASS"
+}, {
+  "check_name": "Campaign driver grain unique",
+  "observed": "0",
+  "expected": "0",
+  "status": "PASS"
+}, {
+  "check_name": "Campaign driver metrics valid",
+  "observed": "0",
+  "expected": "0 invalid",
+  "status": "PASS"
+}, {
+  "check_name": "Campaign drivers populated",
+  "observed": "486",
+  "expected": "\u003e 0",
+  "status": "PASS"
+}, {
+  "check_name": "Campaign spend reconciles",
+  "observed": "1526533.881492/1526533.881492",
+  "expected": "equal",
+  "status": "PASS"
+}, {
+  "check_name": "Campaign value grain unique",
+  "observed": "0",
+  "expected": "0",
+  "status": "PASS"
+}, {
+  "check_name": "Campaign value mart populated",
+  "observed": "162",
+  "expected": "\u003e 0",
+  "status": "PASS"
+}, {
+  "check_name": "Campaign value metrics valid",
+  "observed": "0",
+  "expected": "0 invalid",
+  "status": "PASS"
+}, {
+  "check_name": "Customer predictions valid",
+  "observed": "0",
+  "expected": "0 invalid",
+  "status": "PASS"
+}, {
+  "check_name": "Customer value keys unique",
+  "observed": "0",
+  "expected": "0",
+  "status": "PASS"
+}, {
+  "check_name": "Customer value mart populated",
+  "observed": "4628",
+  "expected": "\u003e 0",
+  "status": "PASS"
+}, {
+  "check_name": "Customer value matches scored customers",
+  "observed": "4628/4628",
+  "expected": "equal",
+  "status": "PASS"
+}, {
+  "check_name": "Mart lineage retained",
+  "observed": "0",
+  "expected": "0 missing",
+  "status": "PASS"
+}, {
+  "check_name": "Meta Winter wins platform ROAS",
+  "observed": "Meta\u003d4.949660748, Shopping\u003d4.450364063",
+  "expected": "Meta \u003e Shopping",
+  "status": "PASS"
+}, {
+  "check_name": "No raw PII in final marts",
+  "observed": "0",
+  "expected": "0",
+  "status": "PASS"
+}, {
+  "check_name": "Predicted campaign value reconciles",
+  "observed": "4122636.5659370422/4122636.5659370422",
+  "expected": "equal",
+  "status": "PASS"
+}, {
+  "check_name": "Shopping wins value-adjusted ROAS",
+  "observed": "Shopping\u003d5.5183421904841037, Meta\u003d3.2104981792918226",
+  "expected": "Shopping \u003e Meta",
+  "status": "PASS"
+}, {
+  "check_name": "Value-adjusted ROAS formula valid",
+  "observed": "0",
+  "expected": "0 invalid",
+  "status": "PASS"
+}]
