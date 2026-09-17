@@ -266,7 +266,9 @@ previous AS (
        ARRAY_AGG(detected_count ORDER BY recorded_at DESC LIMIT 1)[OFFSET(0)] AS detected_count
      FROM ${self()}
      GROUP BY dq_code`,
-    `SELECT CAST(NULL AS STRING) AS dq_code, CAST(NULL AS INT64) AS detected_count WHERE FALSE`
+    `SELECT CAST(NULL AS STRING) AS dq_code, CAST(NULL AS INT64) AS detected_count
+     FROM UNNEST([1]) AS placeholder
+     WHERE FALSE`
   )}
 ),
 
