@@ -1,15 +1,19 @@
 config { type: "assertion", schema: "kloof_ops", tags: ["quality", "quality_freshness", "freshness"] }
 
 WITH freshness AS (
-  SELECT "google_ads_performance_raw" AS source_name, COUNTIF(dt = DATE_SUB(CURRENT_DATE("Africa/Johannesburg"), INTERVAL 1 DAY)) AS yesterday_rows FROM ${ref("google_ads_performance_raw")}
-  UNION ALL SELECT "google_ads_clicks", COUNTIF(dt = DATE_SUB(CURRENT_DATE("Africa/Johannesburg"), INTERVAL 1 DAY)) FROM ${ref("google_ads_clicks")}
-  UNION ALL SELECT "meta_ads_insights_raw", COUNTIF(dt = DATE_SUB(CURRENT_DATE("Africa/Johannesburg"), INTERVAL 1 DAY)) FROM ${ref("meta_ads_insights_raw")}
-  UNION ALL SELECT "ga4_events", COUNTIF(dt = DATE_SUB(CURRENT_DATE("Africa/Johannesburg"), INTERVAL 1 DAY)) FROM ${ref("ga4_events")}
-  UNION ALL SELECT "crm_customers", COUNTIF(dt = DATE_SUB(CURRENT_DATE("Africa/Johannesburg"), INTERVAL 1 DAY)) FROM ${ref("crm_customers")}
-  UNION ALL SELECT "crm_orders", COUNTIF(dt = DATE_SUB(CURRENT_DATE("Africa/Johannesburg"), INTERVAL 1 DAY)) FROM ${ref("crm_orders")}
-  UNION ALL SELECT "crm_order_items", COUNTIF(dt = DATE_SUB(CURRENT_DATE("Africa/Johannesburg"), INTERVAL 1 DAY)) FROM ${ref("crm_order_items")}
-  UNION ALL SELECT "creative_copy_raw", COUNTIF(dt = DATE_SUB(CURRENT_DATE("Africa/Johannesburg"), INTERVAL 1 DAY)) FROM ${ref("creative_copy_raw")}
-  UNION ALL SELECT "weather_daily", COUNTIF(dt = DATE_SUB(CURRENT_DATE("Africa/Johannesburg"), INTERVAL 1 DAY)) FROM ${ref("weather_daily")}
-  UNION ALL SELECT "fx_rates", COUNTIF(dt = DATE_SUB(CURRENT_DATE("Africa/Johannesburg"), INTERVAL 1 DAY)) FROM ${ref("fx_rates")}
+  SELECT "google_ads_performance_raw" AS source_name, "DAILY" AS cadence, COUNTIF(dt = DATE_SUB(CURRENT_DATE("Africa/Johannesburg"), INTERVAL 1 DAY)) AS qualifying_rows FROM ${ref("google_ads_performance_raw")}
+  UNION ALL SELECT "google_ads_clicks", "DAILY", COUNTIF(dt = DATE_SUB(CURRENT_DATE("Africa/Johannesburg"), INTERVAL 1 DAY)) FROM ${ref("google_ads_clicks")}
+  UNION ALL SELECT "meta_ads_insights_raw", "DAILY", COUNTIF(dt = DATE_SUB(CURRENT_DATE("Africa/Johannesburg"), INTERVAL 1 DAY)) FROM ${ref("meta_ads_insights_raw")}
+  UNION ALL SELECT "ga4_events", "DAILY", COUNTIF(dt = DATE_SUB(CURRENT_DATE("Africa/Johannesburg"), INTERVAL 1 DAY)) FROM ${ref("ga4_events")}
+  -- Raw CRM PII is protected by a row-access policy. The secured staging table
+  -- proves that yesterday's customer delivery was ingested successfully.
+  UNION ALL SELECT "crm_customers", "DAILY_SECURED", COUNTIF(dt = DATE_SUB(CURRENT_DATE("Africa/Johannesburg"), INTERVAL 1 DAY)) FROM ${ref("stg_crm_customers")}
+  UNION ALL SELECT "crm_orders", "DAILY", COUNTIF(dt = DATE_SUB(CURRENT_DATE("Africa/Johannesburg"), INTERVAL 1 DAY)) FROM ${ref("crm_orders")}
+  UNION ALL SELECT "crm_order_items", "DAILY", COUNTIF(dt = DATE_SUB(CURRENT_DATE("Africa/Johannesburg"), INTERVAL 1 DAY)) FROM ${ref("crm_order_items")}
+  -- Creative files arrive only when an ad changes; require the event-driven
+  -- source to be available instead of inventing an empty daily partition.
+  UNION ALL SELECT "creative_copy_raw", "EVENT_DRIVEN", COUNT(*) FROM ${ref("creative_copy_raw")}
+  UNION ALL SELECT "weather_daily", "DAILY", COUNTIF(dt = DATE_SUB(CURRENT_DATE("Africa/Johannesburg"), INTERVAL 1 DAY)) FROM ${ref("weather_daily")}
+  UNION ALL SELECT "fx_rates", "DAILY", COUNTIF(dt = DATE_SUB(CURRENT_DATE("Africa/Johannesburg"), INTERVAL 1 DAY)) FROM ${ref("fx_rates")}
 )
-SELECT * FROM freshness WHERE yesterday_rows = 0
+SELECT * FROM freshness WHERE qualifying_rows = 0
