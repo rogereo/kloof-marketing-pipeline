@@ -1,0 +1,18 @@
+config {
+  type: "table",
+  schema: "kloof_gold",
+  tags: ["gold", "gold_batch1", "fact", "orders", "DQ03", "DQ04", "DQ06", "DQ07", "SH08", "SH10"],
+  description: "One genuine CRM order with attributed session and CRM-only completed revenue.",
+  assertions: {
+    uniqueKey: ["order_id"],
+    nonNull: ["order_id", "date_key", "customer_key", "order_date", "status", "completed_revenue", "attribution_method", "dt", "source_file_name"],
+    rowConditions: ["is_test_order = false", "completed_revenue >= 0", "attribution_method in ('click_id', 'utm', 'unattributed')"]
+  }
+}
+
+SELECT
+  CAST(FORMAT_DATE("%Y%m%d", order_date) AS INT64) AS date_key,
+  o.*,
+  IF(status = "completed", revenue, 0) AS completed_revenue,
+  IF(status = "refunded", revenue, 0) AS refunded_order_value
+FROM ${ref("int_orders_attributed")} AS o

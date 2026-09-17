@@ -1,0 +1,44 @@
+config {
+  type: "table",
+  schema: "kloof_gold",
+  tags: ["gold", "gold_batch1", "dimension", "date"],
+  description: "Calendar dimension covering every reporting date represented in the conformed sources.",
+  assertions: {
+    uniqueKey: ["calendar_date"],
+    nonNull: ["calendar_date", "date_key", "week_start_date", "month_start_date", "day_name"]
+  }
+}
+
+WITH source_dates AS (
+  SELECT performance_date AS calendar_date FROM ${ref("stg_google_ads_performance")}
+  UNION ALL
+  SELECT insight_date FROM ${ref("stg_meta_ads")}
+  UNION ALL
+  SELECT session_date FROM ${ref("int_sessions")}
+  UNION ALL
+  SELECT order_date FROM ${ref("int_orders_attributed")}
+),
+
+bounds AS (
+  SELECT
+    MIN(calendar_date) AS min_date,
+    MAX(calendar_date) AS max_date
+  FROM source_dates
+  WHERE calendar_date IS NOT NULL
+)
+
+SELECT
+  calendar_date,
+  CAST(FORMAT_DATE("%Y%m%d", calendar_date) AS INT64) AS date_key,
+  EXTRACT(YEAR FROM calendar_date) AS calendar_year,
+  EXTRACT(QUARTER FROM calendar_date) AS calendar_quarter,
+  EXTRACT(MONTH FROM calendar_date) AS calendar_month,
+  FORMAT_DATE("%B", calendar_date) AS month_name,
+  EXTRACT(ISOWEEK FROM calendar_date) AS iso_week,
+  DATE_TRUNC(calendar_date, WEEK(MONDAY)) AS week_start_date,
+  DATE_TRUNC(calendar_date, MONTH) AS month_start_date,
+  EXTRACT(DAY FROM calendar_date) AS day_of_month,
+  FORMAT_DATE("%A", calendar_date) AS day_name,
+  EXTRACT(DAYOFWEEK FROM calendar_date) IN (1, 7) AS is_weekend
+FROM bounds,
+UNNEST(GENERATE_DATE_ARRAY(min_date, max_date)) AS calendar_date

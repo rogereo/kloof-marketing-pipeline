@@ -1,0 +1,16 @@
+config {
+  type: "table",
+  schema: "kloof_gold",
+  tags: ["gold", "gold_batch1", "fact", "sessions", "DQ08", "SH07", "SH08"],
+  description: "One non-internal web session with identity and click-ID-first campaign attribution.",
+  assertions: {
+    uniqueKey: ["session_key"],
+    nonNull: ["session_key", "date_key", "session_date", "user_pseudo_id", "ga_session_id", "attribution_method", "dt", "source_file_name"],
+    rowConditions: ["is_internal_session = false", "attribution_method in ('click_id', 'utm', 'unattributed')"]
+  }
+}
+
+SELECT
+  CAST(FORMAT_DATE("%Y%m%d", session_date) AS INT64) AS date_key,
+  *
+FROM ${ref("int_sessions")}

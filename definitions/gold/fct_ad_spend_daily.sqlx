@@ -1,0 +1,45 @@
+config {
+  type: "table",
+  schema: "kloof_gold",
+  tags: ["gold", "gold_batch1", "fact", "ad_spend", "SH01", "SH03", "SH04", "SH05", "SH10", "DQ11"],
+  description: "Daily Google and Meta ad performance at date-platform-ad grain, with all spend converted to ZAR.",
+  assertions: {
+    uniqueKey: ["spend_date", "platform", "ad_id"],
+    nonNull: ["spend_date", "date_key", "platform", "campaign_id", "ad_id", "spend_zar", "dt", "source_file_name"],
+    rowConditions: ["spend_zar >= 0", "impressions >= 0", "clicks >= 0", "claimed_conversions >= 0", "claimed_revenue_zar >= 0"]
+  }
+}
+
+SELECT
+  performance_date AS spend_date,
+  CAST(FORMAT_DATE("%Y%m%d", performance_date) AS INT64) AS date_key,
+  "google" AS platform,
+  campaign_id,
+  ad_id,
+  impressions,
+  clicks,
+  cost_zar AS spend_zar,
+  conversions AS claimed_conversions,
+  conversions_value_zar AS claimed_revenue_zar,
+  all_conversions AS platform_all_conversions,
+  dt,
+  source_file_name
+FROM ${ref("stg_google_ads_performance")}
+
+UNION ALL
+
+SELECT
+  insight_date AS spend_date,
+  CAST(FORMAT_DATE("%Y%m%d", insight_date) AS INT64) AS date_key,
+  "meta" AS platform,
+  campaign_id,
+  ad_id,
+  impressions,
+  clicks,
+  spend_zar,
+  purchases AS claimed_conversions,
+  purchase_value_zar AS claimed_revenue_zar,
+  CAST(NULL AS NUMERIC) AS platform_all_conversions,
+  dt,
+  source_file_name
+FROM ${ref("stg_meta_ads")}
