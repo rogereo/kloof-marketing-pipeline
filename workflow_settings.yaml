@@ -1,0 +1,11 @@
+dataformCoreVersion: "3.0.0"
+
+defaultProject: kloof-marketing-pipeline
+defaultLocation: US
+defaultDataset: kloof_silver
+defaultAssertionDataset: kloof_ops
+
+vars:
+  bronzeDataset: kloof_bronze
+  reportingTimezone: Africa/Johannesburg
+  ga4LookbackDays: "3"
