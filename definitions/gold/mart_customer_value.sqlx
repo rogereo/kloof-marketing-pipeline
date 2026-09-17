@@ -1,0 +1,69 @@
+config {
+  type: "table",
+  schema: "kloof_gold",
+  tags: ["gold", "gold_batch4", "mart", "customer_value", "pltv"],
+  description: "One scored customer with acquiring campaign, early behaviour, creative context, predicted future value and value segment.",
+  assertions: {
+    uniqueKey: ["customer_key"],
+    nonNull: [
+      "customer_key",
+      "acquisition_date",
+      "predicted_value_90d",
+      "value_segment",
+      "dt",
+      "source_file_name"
+    ],
+    rowConditions: [
+      "predicted_value_90d >= 0",
+      "value_segment in ('high', 'steady', 'low')"
+    ]
+  }
+}
+
+SELECT
+  p.customer_key,
+  p.acquisition_date,
+  f.city_standard,
+  f.acquisition_platform,
+  f.acquisition_campaign_id,
+  c.current_campaign_name AS acquisition_campaign_name,
+  f.acquisition_ad_id,
+  f.acquisition_attribution_method,
+  f.first_order_value,
+  f.first_order_completed_revenue,
+  f.first_order_item_count,
+  f.first_order_discount,
+  f.acquisition_creative_tone,
+  f.acquisition_creative_discount_pct,
+  f.acquisition_creative_cta,
+  f.acquisition_creative_product,
+  f.orders_7d,
+  f.completed_orders_7d,
+  f.refunded_orders_7d,
+  f.completed_revenue_7d,
+  f.avg_completed_order_value_7d,
+  f.discount_7d,
+  f.items_7d,
+  f.sessions_7d,
+  f.click_id_sessions_7d,
+  f.utm_sessions_7d,
+  f.distinct_campaigns_7d,
+  f.events_7d,
+  f.engagement_time_msec_7d,
+  f.first_device_category,
+  p.predicted_future_value_90d AS predicted_value_90d,
+  p.value_segment,
+  f.future_value_90d AS observed_future_value_90d,
+  d.lifetime_order_count,
+  d.lifetime_order_count = 1 AS is_one_time_buyer,
+  p.scored_at_utc,
+  GREATEST(p.dt, f.dt, d.dt) AS dt,
+  p.source_file_name
+FROM ${ref("ml_customer_pltv")} AS p
+JOIN ${ref("mart_customer_features")} AS f
+  USING (customer_key)
+JOIN ${ref("dim_customer")} AS d
+  USING (customer_key)
+LEFT JOIN ${ref("dim_campaign")} AS c
+  ON c.platform = f.acquisition_platform
+  AND c.campaign_id = f.acquisition_campaign_id

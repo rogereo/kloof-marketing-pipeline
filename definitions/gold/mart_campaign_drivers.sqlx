@@ -1,0 +1,164 @@
+config {
+  type: "table",
+  schema: "kloof_gold",
+  tags: ["gold", "gold_batch4", "mart", "campaign_drivers", "weather", "creative"],
+  description: "Weekly campaign and city performance with weather and dominant creative features for driver analysis.",
+  assertions: {
+    uniqueKey: ["week_start_date", "platform", "campaign_id", "city_standard"],
+    nonNull: [
+      "week_start_date",
+      "platform",
+      "campaign_id",
+      "city_standard",
+      "attributed_sessions",
+      "real_orders",
+      "real_revenue_zar",
+      "allocated_spend_zar",
+      "avg_temperature_max_c",
+      "avg_temperature_min_c",
+      "total_precipitation_mm",
+      "dt",
+      "source_file_name"
+    ],
+    rowConditions: [
+      "city_standard in ('Cape Town', 'Johannesburg', 'Durban')",
+      "attributed_sessions >= 0",
+      "real_orders >= 0",
+      "real_revenue_zar >= 0",
+      "allocated_spend_zar >= 0",
+      "avg_temperature_max_c >= avg_temperature_min_c",
+      "total_precipitation_mm >= 0"
+    ]
+  }
+}
+
+WITH session_city AS (
+  SELECT
+    DATE_TRUNC(session_date, WEEK(MONDAY)) AS week_start_date,
+    attributed_platform AS platform,
+    campaign_id,
+    city AS city_standard,
+    COUNT(*) AS attributed_sessions
+  FROM ${ref("fct_sessions")}
+  WHERE attributed_platform IN ("google", "meta")
+    AND campaign_id IS NOT NULL
+    AND city IN ("Cape Town", "Johannesburg", "Durban")
+  GROUP BY week_start_date, platform, campaign_id, city_standard
+),
+
+session_shares AS (
+  SELECT
+    *,
+    SAFE_DIVIDE(
+      attributed_sessions,
+      SUM(attributed_sessions) OVER (
+        PARTITION BY week_start_date, platform, campaign_id
+      )
+    ) AS city_session_share
+  FROM session_city
+),
+
+order_city AS (
+  SELECT
+    DATE_TRUNC(o.order_date, WEEK(MONDAY)) AS week_start_date,
+    o.attributed_platform AS platform,
+    o.campaign_id,
+    c.city_standard,
+    COUNT(*) AS real_orders,
+    SUM(o.completed_revenue) AS real_revenue_zar,
+    COUNT(DISTINCT IF(o.order_date = c.first_order_date, o.customer_key, NULL)) AS new_customers
+  FROM ${ref("fct_orders")} AS o
+  JOIN ${ref("dim_customer")} AS c
+    USING (customer_key)
+  WHERE o.attributed_platform IN ("google", "meta")
+    AND o.campaign_id IS NOT NULL
+    AND c.city_standard IN ("Cape Town", "Johannesburg", "Durban")
+  GROUP BY week_start_date, platform, campaign_id, city_standard
+),
+
+city_keys AS (
+  SELECT week_start_date, platform, campaign_id, city_standard FROM session_shares
+  UNION DISTINCT
+  SELECT week_start_date, platform, campaign_id, city_standard FROM order_city
+),
+
+weather_weekly AS (
+  SELECT
+    DATE_TRUNC(weather_date, WEEK(MONDAY)) AS week_start_date,
+    city_standard,
+    AVG(temperature_max_c) AS avg_temperature_max_c,
+    AVG(temperature_min_c) AS avg_temperature_min_c,
+    SUM(precipitation_mm) AS total_precipitation_mm,
+    MAX(dt) AS weather_dt,
+    ARRAY_AGG(source_file_name ORDER BY weather_date DESC, dt DESC LIMIT 1)[OFFSET(0)] AS weather_source_file_name
+  FROM ${ref("stg_weather")}
+  GROUP BY week_start_date, city_standard
+),
+
+creative_by_ad AS (
+  SELECT
+    DATE_TRUNC(s.spend_date, WEEK(MONDAY)) AS week_start_date,
+    s.platform,
+    s.campaign_id,
+    a.tone,
+    a.cta,
+    AVG(a.discount_pct) AS avg_discount_pct,
+    SUM(s.spend_zar) AS creative_spend_zar
+  FROM ${ref("fct_ad_spend_daily")} AS s
+  LEFT JOIN ${ref("dim_ad")} AS a
+    ON a.platform = s.platform
+    AND a.ad_id = s.ad_id
+  GROUP BY week_start_date, platform, campaign_id, tone, cta
+),
+
+dominant_creative AS (
+  SELECT
+    week_start_date,
+    platform,
+    campaign_id,
+    tone AS dominant_tone,
+    cta AS dominant_cta,
+    avg_discount_pct AS creative_discount_pct
+  FROM creative_by_ad
+  QUALIFY ROW_NUMBER() OVER (
+    PARTITION BY week_start_date, platform, campaign_id
+    ORDER BY creative_spend_zar DESC, tone, cta
+  ) = 1
+)
+
+SELECT
+  k.week_start_date,
+  k.platform,
+  k.campaign_id,
+  cv.campaign_name,
+  k.city_standard,
+  COALESCE(s.attributed_sessions, 0) AS attributed_sessions,
+  COALESCE(o.real_orders, 0) AS real_orders,
+  COALESCE(o.real_revenue_zar, 0) AS real_revenue_zar,
+  COALESCE(o.new_customers, 0) AS new_customers,
+  COALESCE(cv.spend_zar * s.city_session_share, 0) AS allocated_spend_zar,
+  COALESCE(cv.claimed_conversions * s.city_session_share, 0) AS allocated_claimed_conversions,
+  COALESCE(cv.claimed_revenue_zar * s.city_session_share, 0) AS allocated_claimed_revenue_zar,
+  SAFE_DIVIDE(
+    COALESCE(o.real_revenue_zar, 0),
+    cv.spend_zar * s.city_session_share
+  ) AS city_actual_roas,
+  w.avg_temperature_max_c,
+  w.avg_temperature_min_c,
+  w.total_precipitation_mm,
+  d.dominant_tone,
+  d.dominant_cta,
+  d.creative_discount_pct,
+  GREATEST(cv.dt, w.weather_dt) AS dt,
+  cv.source_file_name
+FROM city_keys AS k
+LEFT JOIN session_shares AS s
+  USING (week_start_date, platform, campaign_id, city_standard)
+LEFT JOIN order_city AS o
+  USING (week_start_date, platform, campaign_id, city_standard)
+JOIN ${ref("mart_campaign_value")} AS cv
+  USING (week_start_date, platform, campaign_id)
+JOIN weather_weekly AS w
+  USING (week_start_date, city_standard)
+LEFT JOIN dominant_creative AS d
+  USING (week_start_date, platform, campaign_id)

@@ -1,7 +1,7 @@
 config {
   type: "table",
   schema: "kloof_gold",
-  tags: ["gold", "gold_batch2", "customer_features", "ml"],
+  tags: ["gold", "gold_batch2", "gold_batch4", "customer_features", "ml"],
   description: "One row per acquired customer. Predictors use days 0-7 after first order; future_value_90d uses completed CRM revenue from days 8-97.",
   assertions: {
     uniqueKey: ["customer_key"],
@@ -49,7 +49,11 @@ acquisition_order AS (
     attributed_platform AS acquisition_platform,
     campaign_id AS acquisition_campaign_id,
     ad_id AS acquisition_ad_id,
-    attribution_method AS acquisition_attribution_method
+    attribution_method AS acquisition_attribution_method,
+    revenue AS first_order_value,
+    completed_revenue AS first_order_completed_revenue,
+    item_count AS first_order_item_count,
+    discount AS first_order_discount
   FROM ${ref("fct_orders")}
   QUALIFY ROW_NUMBER() OVER (
     PARTITION BY customer_key
@@ -151,6 +155,14 @@ SELECT
   a.acquisition_campaign_id,
   a.acquisition_ad_id,
   a.acquisition_attribution_method,
+  a.first_order_value,
+  a.first_order_completed_revenue,
+  a.first_order_item_count,
+  a.first_order_discount,
+  ad.tone AS acquisition_creative_tone,
+  ad.discount_pct AS acquisition_creative_discount_pct,
+  ad.cta AS acquisition_creative_cta,
+  ad.product AS acquisition_creative_product,
   o.orders_7d,
   o.completed_orders_7d,
   o.refunded_orders_7d,
@@ -176,3 +188,6 @@ LEFT JOIN session_features AS s
   USING (customer_key)
 LEFT JOIN acquisition_order AS a
   USING (customer_key)
+LEFT JOIN ${ref("dim_ad")} AS ad
+  ON ad.platform = a.acquisition_platform
+  AND ad.ad_id = a.acquisition_ad_id

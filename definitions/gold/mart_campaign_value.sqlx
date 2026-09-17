@@ -1,0 +1,144 @@
+config {
+  type: "table",
+  schema: "kloof_gold",
+  tags: ["gold", "gold_batch4", "mart", "campaign_value", "roas"],
+  description: "Weekly campaign performance comparing platform claims, CRM truth and predicted value from newly acquired customers.",
+  assertions: {
+    uniqueKey: ["week_start_date", "platform", "campaign_id"],
+    nonNull: [
+      "week_start_date",
+      "platform",
+      "campaign_id",
+      "campaign_name",
+      "spend_zar",
+      "claimed_conversions",
+      "claimed_revenue_zar",
+      "real_orders",
+      "real_revenue_zar",
+      "new_customers",
+      "predicted_value_90d",
+      "dt",
+      "source_file_name"
+    ],
+    rowConditions: [
+      "spend_zar >= 0",
+      "claimed_conversions >= 0",
+      "claimed_revenue_zar >= 0",
+      "real_orders >= 0",
+      "real_revenue_zar >= 0",
+      "new_customers >= 0",
+      "predicted_value_90d >= 0",
+      "one_time_buyer_share between 0 and 1"
+    ]
+  }
+}
+
+WITH spend AS (
+  SELECT
+    DATE_TRUNC(spend_date, WEEK(MONDAY)) AS week_start_date,
+    platform,
+    campaign_id,
+    SUM(spend_zar) AS spend_zar,
+    SUM(claimed_conversions) AS claimed_conversions,
+    SUM(claimed_revenue_zar) AS claimed_revenue_zar,
+    SUM(impressions) AS impressions,
+    SUM(clicks) AS clicks,
+    MAX(dt) AS dt,
+    ARRAY_AGG(source_file_name ORDER BY spend_date DESC, dt DESC LIMIT 1)[OFFSET(0)] AS source_file_name
+  FROM ${ref("fct_ad_spend_daily")}
+  GROUP BY week_start_date, platform, campaign_id
+),
+
+actual_orders AS (
+  SELECT
+    DATE_TRUNC(order_date, WEEK(MONDAY)) AS week_start_date,
+    attributed_platform AS platform,
+    campaign_id,
+    COUNT(*) AS real_orders,
+    COUNTIF(status = "completed") AS completed_orders,
+    SUM(completed_revenue) AS real_revenue_zar
+  FROM ${ref("fct_orders")}
+  WHERE attributed_platform IN ("google", "meta")
+    AND campaign_id IS NOT NULL
+  GROUP BY week_start_date, platform, campaign_id
+),
+
+first_orders AS (
+  SELECT
+    customer_key,
+    order_date,
+    attributed_platform AS platform,
+    campaign_id,
+    completed_revenue AS first_order_revenue_zar
+  FROM ${ref("fct_orders")}
+  QUALIFY ROW_NUMBER() OVER (
+    PARTITION BY customer_key
+    ORDER BY order_timestamp_utc, order_id
+  ) = 1
+),
+
+new_customer_value AS (
+  SELECT
+    DATE_TRUNC(f.order_date, WEEK(MONDAY)) AS week_start_date,
+    f.platform,
+    f.campaign_id,
+    COUNT(*) AS new_customers,
+    SUM(f.first_order_revenue_zar) AS first_order_revenue_zar,
+    SUM(COALESCE(v.predicted_value_90d, 0)) AS predicted_value_90d,
+    SAFE_DIVIDE(
+      COUNTIF(d.lifetime_order_count = 1),
+      COUNT(*)
+    ) AS one_time_buyer_share
+  FROM first_orders AS f
+  JOIN ${ref("dim_customer")} AS d
+    USING (customer_key)
+  LEFT JOIN ${ref("mart_customer_value")} AS v
+    USING (customer_key)
+  WHERE f.platform IN ("google", "meta")
+    AND f.campaign_id IS NOT NULL
+  GROUP BY week_start_date, platform, campaign_id
+),
+
+keys AS (
+  SELECT week_start_date, platform, campaign_id FROM spend
+  UNION DISTINCT
+  SELECT week_start_date, platform, campaign_id FROM actual_orders
+  UNION DISTINCT
+  SELECT week_start_date, platform, campaign_id FROM new_customer_value
+)
+
+SELECT
+  k.week_start_date,
+  k.platform,
+  k.campaign_id,
+  c.current_campaign_name AS campaign_name,
+  COALESCE(s.spend_zar, 0) AS spend_zar,
+  COALESCE(s.impressions, 0) AS impressions,
+  COALESCE(s.clicks, 0) AS clicks,
+  COALESCE(s.claimed_conversions, 0) AS claimed_conversions,
+  COALESCE(s.claimed_revenue_zar, 0) AS claimed_revenue_zar,
+  COALESCE(o.real_orders, 0) AS real_orders,
+  COALESCE(o.completed_orders, 0) AS completed_orders,
+  COALESCE(o.real_revenue_zar, 0) AS real_revenue_zar,
+  COALESCE(n.new_customers, 0) AS new_customers,
+  COALESCE(n.first_order_revenue_zar, 0) AS first_order_revenue_zar,
+  COALESCE(n.predicted_value_90d, 0) AS predicted_value_90d,
+  COALESCE(n.one_time_buyer_share, 0) AS one_time_buyer_share,
+  SAFE_DIVIDE(s.claimed_revenue_zar, s.spend_zar) AS platform_roas,
+  SAFE_DIVIDE(o.real_revenue_zar, s.spend_zar) AS actual_roas,
+  SAFE_DIVIDE(
+    COALESCE(n.first_order_revenue_zar, 0) + COALESCE(n.predicted_value_90d, 0),
+    s.spend_zar
+  ) AS value_adjusted_roas,
+  COALESCE(s.dt, DATE_ADD(k.week_start_date, INTERVAL 6 DAY)) AS dt,
+  COALESCE(s.source_file_name, "derived:fct_orders") AS source_file_name
+FROM keys AS k
+LEFT JOIN spend AS s
+  USING (week_start_date, platform, campaign_id)
+LEFT JOIN actual_orders AS o
+  USING (week_start_date, platform, campaign_id)
+LEFT JOIN new_customer_value AS n
+  USING (week_start_date, platform, campaign_id)
+LEFT JOIN ${ref("dim_campaign")} AS c
+  ON c.platform = k.platform
+  AND c.campaign_id = k.campaign_id
