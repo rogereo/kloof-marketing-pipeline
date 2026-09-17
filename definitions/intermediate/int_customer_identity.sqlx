@@ -2,7 +2,7 @@ config {
   type: "table",
   schema: "kloof_silver",
   tags: ["silver", "conformed", "batch4", "batch4_core", "identity", "SH11", "DQ12"],
-  description: "One row per CRM customer ID mapped to a stable person-level customer key through email and phone hashes.",
+  description: "One row per customer ID mapped to a stable person-level key, including placeholders for order-only late-arriving customers.",
   assertions: {
     uniqueKey: ["customer_id"],
     nonNull: ["customer_id", "customer_key", "identity_method", "dt", "source_file_name"]
@@ -37,10 +37,45 @@ resolved AS (
     c.marketing_opt_in,
     c.is_internal_customer,
     c.dt,
-    c.source_file_name
+    c.source_file_name,
+    FALSE AS is_placeholder
   FROM ${ref("stg_crm_customers")} AS c
   LEFT JOIN phone_email_bridge AS b
     USING (phone_hash)
+),
+
+late_arriving_customers AS (
+  SELECT
+    o.customer_id,
+    CAST(NULL AS STRING) AS email_hash,
+    CAST(NULL AS STRING) AS phone_hash,
+    CONCAT("late_customer|", o.customer_id) AS identity_hash,
+    "late_arriving_placeholder" AS identity_method,
+    CAST(NULL AS STRING) AS city_standard,
+    CAST(NULL AS TIMESTAMP) AS created_at_utc,
+    CAST(NULL AS DATE) AS created_date,
+    CAST(NULL AS BOOL) AS is_guest,
+    CAST(NULL AS BOOL) AS marketing_opt_in,
+    FALSE AS is_internal_customer,
+    MAX(o.dt) AS dt,
+    ARRAY_AGG(
+      o.source_file_name
+      ORDER BY o.dt DESC, o.updated_at_utc DESC
+      LIMIT 1
+    )[OFFSET(0)] AS source_file_name,
+    TRUE AS is_placeholder
+  FROM ${ref("stg_crm_orders")} AS o
+  LEFT JOIN ${ref("stg_crm_customers")} AS c
+    USING (customer_id)
+  WHERE c.customer_id IS NULL
+    AND NOT o.is_test_order
+  GROUP BY o.customer_id
+),
+
+all_identities AS (
+  SELECT * FROM resolved
+  UNION ALL
+  SELECT * FROM late_arriving_customers
 )
 
 SELECT
@@ -55,6 +90,7 @@ SELECT
   is_guest,
   marketing_opt_in,
   is_internal_customer,
+  is_placeholder,
   dt,
   source_file_name
-FROM resolved
+FROM all_identities

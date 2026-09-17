@@ -1,7 +1,8 @@
 WITH metrics AS (
   SELECT
     (SELECT COUNT(*) FROM `kloof-marketing-pipeline.kloof_silver.int_customer_identity`) AS identity_rows,
-    (SELECT COUNT(DISTINCT customer_key) FROM `kloof-marketing-pipeline.kloof_silver.int_customer_identity`) AS distinct_people,
+    (SELECT COUNT(DISTINCT IF(NOT is_internal_customer, customer_key, NULL)) FROM `kloof-marketing-pipeline.kloof_silver.int_customer_identity`) AS distinct_people,
+    (SELECT COUNTIF(is_placeholder) FROM `kloof-marketing-pipeline.kloof_silver.int_customer_identity`) AS late_customer_placeholders,
     (SELECT COUNT(*) - COUNT(DISTINCT customer_id) FROM `kloof-marketing-pipeline.kloof_silver.int_customer_identity`) AS duplicate_customer_ids,
     (SELECT COUNTIF(customer_key IS NULL) FROM `kloof-marketing-pipeline.kloof_silver.int_customer_identity`) AS missing_customer_keys,
     (SELECT COUNT(*) FROM `kloof-marketing-pipeline.kloof_silver.int_sessions`) AS session_rows,
@@ -34,8 +35,9 @@ WITH metrics AS (
 SELECT check_name, observed, expected, IF(passed, "PASS", "FAIL") AS status
 FROM metrics,
 UNNEST([
-  STRUCT("CRM customer IDs mapped" AS check_name, CAST(identity_rows AS STRING) AS observed, "5,170" AS expected, identity_rows = 5170 AS passed),
+  STRUCT("All customer IDs mapped" AS check_name, CAST(identity_rows AS STRING) AS observed, "5,173" AS expected, identity_rows = 5173 AS passed),
   STRUCT("Distinct people conformed", CAST(distinct_people AS STRING), "4,841", distinct_people = 4841),
+  STRUCT("Late customer placeholders created", CAST(late_customer_placeholders AS STRING), "3", late_customer_placeholders = 3),
   STRUCT("Customer IDs unique", CAST(duplicate_customer_ids AS STRING), "0", duplicate_customer_ids = 0),
   STRUCT("Every customer has customer_key", CAST(missing_customer_keys AS STRING), "0", missing_customer_keys = 0),
   STRUCT("Sessions loaded", CAST(session_rows AS STRING), "> 0", session_rows > 0),
