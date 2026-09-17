@@ -1,0 +1,31 @@
+Silver staging batch 1 validation
+Run date: 2026-09-17
+
+Dataform execution
+- Status: SUCCESS
+- Duration: 19 seconds
+- Actions: 21 succeeded (7 tables and 14 assertions)
+
+Validation results
+- Cities standardised: observed 0 invalid; PASS
+- Customer IDs unique: observed 0 duplicates; PASS
+- Customers loaded: observed 5,170; PASS
+- Every customer has an identity hash: observed 0 missing; PASS
+- FX date spine complete: observed 180/180 days; PASS
+- Google click IDs unique: observed 0 duplicates; PASS
+- Internal customer detected: observed 1; PASS
+- Latest order version unique: observed 0 duplicates; PASS
+- No missing FX rates: observed 0; PASS
+- No raw PII columns in silver: observed 0; PASS
+- Order item keys unique: observed 0 duplicates; PASS
+- Orders loaded: observed 10,086; PASS
+- QA orders detected: observed 53; PASS
+- Source lineage retained: observed 0 missing; PASS
+
+Reconciliation
+- Latest orders: 10,086
+- QA orders: 53
+- Genuine orders: 10,033
+- story_check.py total orders: 10,033
+
+Result: 14/14 checks passed.
