@@ -1,0 +1,178 @@
+config {
+  type: "table",
+  schema: "kloof_gold",
+  tags: ["gold", "gold_batch2", "customer_features", "ml"],
+  description: "One row per acquired customer. Predictors use days 0-7 after first order; future_value_90d uses completed CRM revenue from days 8-97.",
+  assertions: {
+    uniqueKey: ["customer_key"],
+    nonNull: [
+      "customer_key",
+      "acquisition_date",
+      "orders_7d",
+      "completed_orders_7d",
+      "completed_revenue_7d",
+      "sessions_7d",
+      "future_value_90d",
+      "is_training_eligible",
+      "dt",
+      "source_file_name"
+    ],
+    rowConditions: [
+      "orders_7d > 0",
+      "completed_orders_7d >= 0",
+      "completed_revenue_7d >= 0",
+      "sessions_7d >= 0",
+      "future_value_90d >= 0"
+    ]
+  }
+}
+
+WITH acquired_customers AS (
+  SELECT
+    c.customer_key,
+    c.city_standard,
+    c.has_guest_identity,
+    c.marketing_opt_in,
+    c.is_placeholder,
+    c.first_created_date,
+    c.first_order_date AS acquisition_date,
+    DATE_DIFF(c.first_order_date, c.first_created_date, DAY) AS days_from_signup_to_first_order,
+    c.dt,
+    c.source_file_name
+  FROM ${ref("dim_customer")} AS c
+  WHERE c.first_order_date IS NOT NULL
+),
+
+acquisition_order AS (
+  SELECT
+    customer_key,
+    attributed_platform AS acquisition_platform,
+    campaign_id AS acquisition_campaign_id,
+    ad_id AS acquisition_ad_id,
+    attribution_method AS acquisition_attribution_method
+  FROM ${ref("fct_orders")}
+  QUALIFY ROW_NUMBER() OVER (
+    PARTITION BY customer_key
+    ORDER BY order_timestamp_utc, order_id
+  ) = 1
+),
+
+order_features AS (
+  SELECT
+    c.customer_key,
+    COUNTIF(o.order_date BETWEEN c.acquisition_date
+      AND DATE_ADD(c.acquisition_date, INTERVAL 7 DAY)) AS orders_7d,
+    COUNTIF(
+      o.status = "completed"
+      AND o.order_date BETWEEN c.acquisition_date
+        AND DATE_ADD(c.acquisition_date, INTERVAL 7 DAY)
+    ) AS completed_orders_7d,
+    COUNTIF(
+      o.status = "refunded"
+      AND o.order_date BETWEEN c.acquisition_date
+        AND DATE_ADD(c.acquisition_date, INTERVAL 7 DAY)
+    ) AS refunded_orders_7d,
+    SUM(IF(
+      o.order_date BETWEEN c.acquisition_date
+        AND DATE_ADD(c.acquisition_date, INTERVAL 7 DAY),
+      o.completed_revenue,
+      0
+    )) AS completed_revenue_7d,
+    SUM(IF(
+      o.order_date BETWEEN c.acquisition_date
+        AND DATE_ADD(c.acquisition_date, INTERVAL 7 DAY),
+      COALESCE(o.discount, 0),
+      0
+    )) AS discount_7d,
+    SUM(IF(
+      o.order_date BETWEEN c.acquisition_date
+        AND DATE_ADD(c.acquisition_date, INTERVAL 7 DAY),
+      COALESCE(o.item_count, 0),
+      0
+    )) AS items_7d,
+    SUM(IF(
+      o.status = "completed"
+      AND o.order_date BETWEEN DATE_ADD(c.acquisition_date, INTERVAL 8 DAY)
+        AND DATE_ADD(c.acquisition_date, INTERVAL 97 DAY),
+      o.completed_revenue,
+      0
+    )) AS future_value_90d,
+    MAX(o.dt) AS order_dt,
+    ARRAY_AGG(
+      o.source_file_name IGNORE NULLS
+      ORDER BY o.order_timestamp_utc DESC
+      LIMIT 1
+    )[SAFE_OFFSET(0)] AS order_source_file_name
+  FROM acquired_customers AS c
+  JOIN ${ref("fct_orders")} AS o
+    USING (customer_key)
+  GROUP BY c.customer_key
+),
+
+session_features AS (
+  SELECT
+    c.customer_key,
+    COUNT(s.session_key) AS sessions_7d,
+    COUNTIF(s.attribution_method = "click_id") AS click_id_sessions_7d,
+    COUNTIF(s.attribution_method = "utm") AS utm_sessions_7d,
+    COUNT(DISTINCT s.campaign_id) AS distinct_campaigns_7d,
+    SUM(COALESCE(s.event_count, 0)) AS events_7d,
+    SUM(COALESCE(s.engagement_time_msec, 0)) AS engagement_time_msec_7d,
+    ARRAY_AGG(
+      s.device_category IGNORE NULLS
+      ORDER BY s.session_start_utc
+      LIMIT 1
+    )[SAFE_OFFSET(0)] AS first_device_category,
+    MAX(s.dt) AS session_dt,
+    ARRAY_AGG(
+      s.source_file_name IGNORE NULLS
+      ORDER BY s.session_start_utc DESC
+      LIMIT 1
+    )[SAFE_OFFSET(0)] AS session_source_file_name
+  FROM acquired_customers AS c
+  LEFT JOIN ${ref("fct_sessions")} AS s
+    ON s.customer_key = c.customer_key
+    AND s.session_date BETWEEN c.acquisition_date
+      AND DATE_ADD(c.acquisition_date, INTERVAL 7 DAY)
+  GROUP BY c.customer_key
+)
+
+SELECT
+  c.customer_key,
+  c.acquisition_date,
+  EXTRACT(MONTH FROM c.acquisition_date) AS acquisition_month,
+  EXTRACT(ISOWEEK FROM c.acquisition_date) AS acquisition_iso_week,
+  c.city_standard,
+  c.has_guest_identity,
+  c.marketing_opt_in,
+  c.is_placeholder,
+  c.days_from_signup_to_first_order,
+  a.acquisition_platform,
+  a.acquisition_campaign_id,
+  a.acquisition_ad_id,
+  a.acquisition_attribution_method,
+  o.orders_7d,
+  o.completed_orders_7d,
+  o.refunded_orders_7d,
+  o.completed_revenue_7d,
+  SAFE_DIVIDE(o.completed_revenue_7d, o.completed_orders_7d) AS avg_completed_order_value_7d,
+  o.discount_7d,
+  o.items_7d,
+  s.sessions_7d,
+  s.click_id_sessions_7d,
+  s.utm_sessions_7d,
+  s.distinct_campaigns_7d,
+  s.events_7d,
+  s.engagement_time_msec_7d,
+  s.first_device_category,
+  o.future_value_90d,
+  c.acquisition_date <= DATE "2026-06-10" AS is_training_eligible,
+  GREATEST(c.dt, o.order_dt, COALESCE(s.session_dt, c.dt)) AS dt,
+  COALESCE(o.order_source_file_name, s.session_source_file_name, c.source_file_name) AS source_file_name
+FROM acquired_customers AS c
+JOIN order_features AS o
+  USING (customer_key)
+LEFT JOIN session_features AS s
+  USING (customer_key)
+LEFT JOIN acquisition_order AS a
+  USING (customer_key)
