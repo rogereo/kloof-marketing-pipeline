@@ -1,0 +1,100 @@
+config {
+  type: "table",
+  schema: "kloof_silver",
+  tags: ["silver", "staging", "batch2", "google_ads", "SH01", "SH02", "DQ10"],
+  description: "Typed Google Ads performance resolved by CSV header name so schema-order changes do not shift metrics.",
+  assertions: {
+    uniqueKey: ["performance_date", "ad_id"],
+    nonNull: ["performance_date", "campaign_id", "ad_id", "cost_zar", "dt", "source_file_name"],
+    rowConditions: [
+      "impressions >= 0",
+      "clicks >= 0",
+      "cost_zar >= 0",
+      "conversions >= 0"
+    ]
+  }
+}
+
+WITH raw AS (
+  SELECT
+    raw_line,
+    dt,
+    _FILE_NAME AS source_file_name
+  FROM ${ref("google_ads_performance_raw")}
+),
+
+headers AS (
+  SELECT
+    dt,
+    source_file_name,
+    SPLIT(raw_line, ",") AS header_columns
+  FROM raw
+  WHERE STARTS_WITH(raw_line, "segments_date,")
+),
+
+header_positions AS (
+  SELECT
+    dt,
+    source_file_name,
+    MAX(IF(column_name = "segments_date", column_offset, NULL)) AS segments_date_idx,
+    MAX(IF(column_name = "customer_id", column_offset, NULL)) AS customer_id_idx,
+    MAX(IF(column_name = "campaign_id", column_offset, NULL)) AS campaign_id_idx,
+    MAX(IF(column_name = "campaign_name", column_offset, NULL)) AS campaign_name_idx,
+    MAX(IF(column_name = "ad_group_id", column_offset, NULL)) AS ad_group_id_idx,
+    MAX(IF(column_name = "ad_group_name", column_offset, NULL)) AS ad_group_name_idx,
+    MAX(IF(column_name = "ad_group_ad_ad_id", column_offset, NULL)) AS ad_id_idx,
+    MAX(IF(column_name = "metrics_impressions", column_offset, NULL)) AS impressions_idx,
+    MAX(IF(column_name = "metrics_clicks", column_offset, NULL)) AS clicks_idx,
+    MAX(IF(column_name = "metrics_cost_micros", column_offset, NULL)) AS cost_micros_idx,
+    MAX(IF(column_name = "metrics_all_conversions", column_offset, NULL)) AS all_conversions_idx,
+    MAX(IF(column_name = "metrics_conversions", column_offset, NULL)) AS conversions_idx,
+    MAX(IF(column_name = "metrics_conversions_value", column_offset, NULL)) AS conversions_value_idx
+  FROM headers,
+  UNNEST(header_columns) AS column_name WITH OFFSET AS column_offset
+  GROUP BY dt, source_file_name
+),
+
+data_rows AS (
+  SELECT
+    SPLIT(raw_line, ",") AS fields,
+    dt,
+    source_file_name
+  FROM raw
+  WHERE NOT STARTS_WITH(raw_line, "segments_date,")
+    AND NULLIF(TRIM(raw_line), "") IS NOT NULL
+),
+
+typed AS (
+  SELECT
+    SAFE_CAST(d.fields[SAFE_OFFSET(h.segments_date_idx)] AS DATE) AS performance_date,
+    NULLIF(TRIM(d.fields[SAFE_OFFSET(h.customer_id_idx)]), "") AS account_id,
+    NULLIF(TRIM(d.fields[SAFE_OFFSET(h.campaign_id_idx)]), "") AS campaign_id,
+    NULLIF(TRIM(d.fields[SAFE_OFFSET(h.campaign_name_idx)]), "") AS campaign_name,
+    NULLIF(TRIM(d.fields[SAFE_OFFSET(h.ad_group_id_idx)]), "") AS ad_group_id,
+    NULLIF(TRIM(d.fields[SAFE_OFFSET(h.ad_group_name_idx)]), "") AS ad_group_name,
+    NULLIF(TRIM(d.fields[SAFE_OFFSET(h.ad_id_idx)]), "") AS ad_id,
+    SAFE_CAST(d.fields[SAFE_OFFSET(h.impressions_idx)] AS INT64) AS impressions,
+    SAFE_CAST(d.fields[SAFE_OFFSET(h.clicks_idx)] AS INT64) AS clicks,
+    SAFE_CAST(d.fields[SAFE_OFFSET(h.cost_micros_idx)] AS NUMERIC) AS cost_micros,
+    IF(
+      h.all_conversions_idx IS NULL,
+      NULL,
+      SAFE_CAST(d.fields[SAFE_OFFSET(h.all_conversions_idx)] AS NUMERIC)
+    ) AS all_conversions,
+    SAFE_CAST(d.fields[SAFE_OFFSET(h.conversions_idx)] AS NUMERIC) AS conversions,
+    SAFE_CAST(d.fields[SAFE_OFFSET(h.conversions_value_idx)] AS NUMERIC) AS conversions_value_zar,
+    d.dt,
+    d.source_file_name
+  FROM data_rows AS d
+  JOIN header_positions AS h
+    USING (dt, source_file_name)
+)
+
+SELECT
+  * EXCEPT(cost_micros),
+  SAFE_DIVIDE(cost_micros, 1000000) AS cost_zar
+FROM typed
+QUALIFY ROW_NUMBER() OVER (
+  PARTITION BY performance_date, ad_id
+  ORDER BY dt DESC, source_file_name DESC
+) = 1

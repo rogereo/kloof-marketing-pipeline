@@ -1,0 +1,19 @@
+config {
+  type: "table",
+  schema: "kloof_silver",
+  tags: ["silver", "staging", "batch2", "meta_ads", "quarantine", "DQ05"],
+  description: "Malformed Meta Ads JSON lines retained with lineage and a quarantine reason.",
+  assertions: {
+    uniqueKey: ["row_fingerprint"],
+    nonNull: ["row_fingerprint", "raw_line", "quarantine_reason", "dt", "source_file_name"]
+  }
+}
+
+SELECT
+  TO_HEX(SHA256(CONCAT(CAST(dt AS STRING), "|", _FILE_NAME, "|", raw_line))) AS row_fingerprint,
+  raw_line,
+  "SAFE.PARSE_JSON returned NULL" AS quarantine_reason,
+  dt,
+  _FILE_NAME AS source_file_name
+FROM ${ref("meta_ads_insights_raw")}
+WHERE SAFE.PARSE_JSON(raw_line) IS NULL

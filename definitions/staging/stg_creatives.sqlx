@@ -1,0 +1,28 @@
+config {
+  type: "table",
+  schema: "kloof_silver",
+  tags: ["silver", "staging", "batch2", "creatives"],
+  description: "One creative-copy row per ad, with the ad ID extracted from source-file lineage.",
+  assertions: {
+    uniqueKey: ["ad_id"],
+    nonNull: ["ad_id", "copy_text", "dt", "source_file_name"],
+    rowConditions: ["LENGTH(TRIM(copy_text)) > 0"]
+  }
+}
+
+WITH typed AS (
+  SELECT
+    REGEXP_EXTRACT(_FILE_NAME, r"/ad_([^/]+)/copy\.txt$") AS ad_id,
+    raw_line AS copy_text,
+    dt,
+    _FILE_NAME AS source_file_name
+  FROM ${ref("creative_copy_raw")}
+  WHERE NULLIF(TRIM(raw_line), "") IS NOT NULL
+)
+
+SELECT *
+FROM typed
+QUALIFY ROW_NUMBER() OVER (
+  PARTITION BY ad_id
+  ORDER BY dt DESC, source_file_name DESC
+) = 1

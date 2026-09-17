@@ -1,0 +1,83 @@
+config {
+  type: "incremental",
+  schema: "kloof_silver",
+  uniqueKey: ["ad_id", "insight_date"],
+  bigquery: {
+    partitionBy: "insight_date",
+    clusterBy: ["campaign_id", "ad_id"]
+  },
+  tags: ["silver", "staging", "batch2", "meta_ads", "SH03", "SH04", "SH05", "DQ05", "DQ11"],
+  description: "Latest valid Meta Ads pull per ad and insight date, with action arrays pivoted and USD converted to ZAR.",
+  assertions: {
+    uniqueKey: ["ad_id", "insight_date"],
+    nonNull: ["insight_date", "campaign_id", "ad_id", "pulled_at_utc", "spend_usd", "spend_zar", "dt", "source_file_name"],
+    rowConditions: [
+      "impressions >= 0",
+      "clicks >= 0",
+      "spend_usd >= 0",
+      "spend_zar >= 0",
+      "purchases >= 0"
+    ]
+  }
+}
+
+WITH parsed AS (
+  SELECT
+    SAFE.PARSE_JSON(raw_line) AS payload,
+    dt,
+    _FILE_NAME AS source_file_name
+  FROM ${ref("meta_ads_insights_raw")}
+  WHERE SAFE.PARSE_JSON(raw_line) IS NOT NULL
+),
+
+typed AS (
+  SELECT
+    NULLIF(JSON_VALUE(payload, "$.account_id"), "") AS account_id,
+    NULLIF(JSON_VALUE(payload, "$.account_currency"), "") AS account_currency,
+    SAFE_CAST(JSON_VALUE(payload, "$.date_start") AS DATE) AS insight_date,
+    SAFE_CAST(JSON_VALUE(payload, "$.date_stop") AS DATE) AS insight_date_stop,
+    NULLIF(JSON_VALUE(payload, "$.campaign_id"), "") AS campaign_id,
+    NULLIF(JSON_VALUE(payload, "$.campaign_name"), "") AS campaign_name,
+    NULLIF(JSON_VALUE(payload, "$.adset_id"), "") AS adset_id,
+    NULLIF(JSON_VALUE(payload, "$.adset_name"), "") AS adset_name,
+    NULLIF(JSON_VALUE(payload, "$.ad_id"), "") AS ad_id,
+    NULLIF(JSON_VALUE(payload, "$.ad_name"), "") AS ad_name,
+    SAFE_CAST(JSON_VALUE(payload, "$.impressions") AS INT64) AS impressions,
+    SAFE_CAST(JSON_VALUE(payload, "$.clicks") AS INT64) AS clicks,
+    SAFE_CAST(JSON_VALUE(payload, "$.spend") AS NUMERIC) AS spend_usd,
+    COALESCE((
+      SELECT SAFE_CAST(JSON_VALUE(action, "$.value") AS NUMERIC)
+      FROM UNNEST(IFNULL(JSON_QUERY_ARRAY(payload, "$.actions"), [])) AS action
+      WHERE JSON_VALUE(action, "$.action_type") = "offsite_conversion.fb_pixel_purchase"
+      LIMIT 1
+    ), 0) AS purchases,
+    COALESCE((
+      SELECT SAFE_CAST(JSON_VALUE(action_value, "$.value") AS NUMERIC)
+      FROM UNNEST(IFNULL(JSON_QUERY_ARRAY(payload, "$.action_values"), [])) AS action_value
+      WHERE JSON_VALUE(action_value, "$.action_type") = "offsite_conversion.fb_pixel_purchase"
+      LIMIT 1
+    ), 0) AS purchase_value_usd,
+    NULLIF(JSON_VALUE(payload, "$.attribution_setting"), "") AS attribution_setting,
+    SAFE_CAST(JSON_VALUE(payload, "$._pulled_at") AS TIMESTAMP) AS pulled_at_utc,
+    dt,
+    source_file_name
+  FROM parsed
+),
+
+latest_pull AS (
+  SELECT *
+  FROM typed
+  QUALIFY ROW_NUMBER() OVER (
+    PARTITION BY ad_id, insight_date
+    ORDER BY pulled_at_utc DESC, dt DESC, source_file_name DESC
+  ) = 1
+)
+
+SELECT
+  m.*,
+  fx.rate AS usd_zar_rate,
+  m.spend_usd * fx.rate AS spend_zar,
+  m.purchase_value_usd * fx.rate AS purchase_value_zar
+FROM latest_pull AS m
+LEFT JOIN ${ref("stg_fx_rates")} AS fx
+  ON m.insight_date = fx.rate_date

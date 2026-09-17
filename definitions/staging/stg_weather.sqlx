@@ -1,0 +1,43 @@
+config {
+  type: "table",
+  schema: "kloof_silver",
+  tags: ["silver", "staging", "batch2", "weather", "SH09"],
+  description: "Weather arrays zipped by offset to one latest row per standard city and weather date.",
+  assertions: {
+    uniqueKey: ["city_standard", "weather_date"],
+    nonNull: ["city_standard", "weather_date", "temperature_max_c", "temperature_min_c", "precipitation_mm", "dt", "source_file_name"],
+    rowConditions: [
+      "city_standard in ('Cape Town', 'Johannesburg', 'Durban')",
+      "temperature_max_c >= temperature_min_c",
+      "precipitation_mm >= 0"
+    ]
+  }
+}
+
+WITH zipped AS (
+  SELECT
+    CASE REGEXP_EXTRACT(_FILE_NAME, r"/([^/]+)\.json$")
+      WHEN "cape_town" THEN "Cape Town"
+      WHEN "johannesburg" THEN "Johannesburg"
+      WHEN "durban" THEN "Durban"
+    END AS city_standard,
+    SAFE_CAST(weather_date_text AS DATE) AS weather_date,
+    daily.temperature_2m_max[SAFE_OFFSET(array_offset)] AS temperature_max_c,
+    daily.temperature_2m_min[SAFE_OFFSET(array_offset)] AS temperature_min_c,
+    daily.precipitation_sum[SAFE_OFFSET(array_offset)] AS precipitation_mm,
+    latitude,
+    longitude,
+    elevation,
+    timezone,
+    dt,
+    _FILE_NAME AS source_file_name
+  FROM ${ref("weather_daily")},
+  UNNEST(daily.time) AS weather_date_text WITH OFFSET AS array_offset
+)
+
+SELECT *
+FROM zipped
+QUALIFY ROW_NUMBER() OVER (
+  PARTITION BY city_standard, weather_date
+  ORDER BY dt DESC, source_file_name DESC
+) = 1
