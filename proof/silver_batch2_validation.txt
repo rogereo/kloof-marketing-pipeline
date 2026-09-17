@@ -1,0 +1,38 @@
+Silver staging batch 2 validation
+Run date: 2026-09-17
+
+Dataform execution
+- Status: SUCCESS
+- Duration: 17 seconds
+- Actions: 16/16 succeeded
+
+Validation results
+- Broken Meta lines quarantined: observed 13; expected > 0; PASS
+- Creative IDs derived from lineage: observed 0 invalid; PASS
+- Creative ad IDs unique: observed 0 duplicates; PASS
+- Creatives loaded: observed 17; expected > 0; PASS
+- Google cost converted: observed 0 invalid; PASS
+- Google performance keys unique: observed 0 duplicates; PASS
+- Google performance loaded: observed 1,241; expected > 0; PASS
+- Latest Meta pull unique: observed 0 duplicates; PASS
+- Meta insights loaded: observed 1,388; expected > 0; PASS
+- Meta spend converted to ZAR: observed 0 invalid; PASS
+- New Google schema handled: observed 0 missing; PASS
+- Old Google schema handled: observed 0 shifted rows; PASS
+- Source lineage retained: observed 0 missing; PASS
+- Weather arrays zipped: observed 0 invalid; PASS
+- Weather city-date keys unique: observed 0 duplicates; PASS
+- Weather loaded: observed 540; expected > 0; PASS
+
+Result: 16/16 checks passed.
+
+Coverage
+- SH01: Google cost micros converted to ZAR.
+- SH02: Google schema-order change resolved using header names.
+- SH03 and SH04: Meta strings cast and action arrays pivoted.
+- SH05: Latest Meta pull retained per ad and insight date.
+- DQ05: 13 malformed Meta JSON lines quarantined.
+- DQ10: Stable campaign IDs retained independently of campaign names.
+- DQ11: Meta spend converted using complete, forward-filled FX rates.
+- SH09: Weather arrays zipped to one row per city and date.
+- Lineage: dt and source_file_name retained across all Batch 2 models.
