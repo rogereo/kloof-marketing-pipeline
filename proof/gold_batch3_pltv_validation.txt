@@ -1,0 +1,51 @@
+Gold Batch 3 — Customer PLTV Model Validation
+==============================================
+
+Validation date: 2026-09-17
+Project: kloof-marketing-pipeline
+Dataset: kloof_gold
+Model: customer_pltv_model
+Prediction table: ml_customer_pltv
+Validation query: sql/gold/validate_pltv_model.sql
+Evaluation query: sql/gold/show_pltv_evaluation.sql
+
+Execution
+---------
+Model type: BOOSTED_TREE_REGRESSOR
+Training duration: 20 minutes 24 seconds
+Training iterations with evaluated holdout loss: 8
+
+Validation checks
+-----------------
+check_name                               observed   expected                 status
+All value segments populated            3          3                        PASS
+Eligible customers scored               4628/4628  equal                    PASS
+Evaluation metrics persisted            1          1                        PASS
+Evaluation metrics valid                0          0 invalid                PASS
+Model training evaluated holdout loss   8          > 0                      PASS
+No raw PII in predictions               0          0                        PASS
+PLTV model training info available      8          > 0                      PASS
+Predicted values non-negative           0          0                        PASS
+Prediction keys unique                  0          0                        PASS
+Prediction lineage retained             0          0 missing                PASS
+Target excluded from model features     0          0                        PASS
+Value segment ordering valid            PASS       high >= steady >= low    PASS
+
+Summary: 12/12 validation checks passed.
+
+Persisted ML.EVALUATE metrics
+-----------------------------
+Metric                         Value (rounded)
+Mean absolute error            1475.381299
+Mean squared error             6191888.418031
+Mean squared log error         21.723996
+Median absolute error          954.306213
+R2 score                       0.191169
+Explained variance             0.195343
+
+Interpretation
+--------------
+The model and scoring pipeline are operational and leakage-safe. The holdout R2
+indicates modest predictive power, which is reasonable for the short synthetic
+history and limited early-life customer features. Model quality can be improved
+later without changing the Gold-layer interface.

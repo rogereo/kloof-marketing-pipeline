@@ -1,11 +1,10 @@
-WITH model_metadata AS (
+WITH model_training AS (
   SELECT
-    COUNTIF(model_name = "customer_pltv_model") AS model_count,
-    COUNTIF(
-      model_name = "customer_pltv_model"
-      AND model_type = "BOOSTED_TREE_REGRESSOR"
-    ) AS boosted_tree_count
-  FROM `kloof-marketing-pipeline.kloof_gold.INFORMATION_SCHEMA.MODELS`
+    COUNT(*) AS training_info_rows,
+    COUNTIF(eval_loss IS NOT NULL) AS evaluated_iterations
+  FROM ML.TRAINING_INFO(
+    MODEL `kloof-marketing-pipeline.kloof_gold.customer_pltv_model`
+  )
 ),
 
 evaluation AS (
@@ -49,19 +48,19 @@ predictions AS (
 
 checks AS (
   SELECT
-    "PLTV model exists" AS check_name,
-    CAST(model_count AS STRING) AS observed,
-    "1" AS expected,
-    model_count = 1 AS passed
-  FROM model_metadata
+    "PLTV model training info available" AS check_name,
+    CAST(training_info_rows AS STRING) AS observed,
+    "> 0" AS expected,
+    training_info_rows > 0 AS passed
+  FROM model_training
 
   UNION ALL
   SELECT
-    "Model type is boosted tree regressor",
-    CAST(boosted_tree_count AS STRING),
-    "1",
-    boosted_tree_count = 1
-  FROM model_metadata
+    "Model training evaluated holdout loss",
+    CAST(evaluated_iterations AS STRING),
+    "> 0",
+    evaluated_iterations > 0
+  FROM model_training
 
   UNION ALL
   SELECT
