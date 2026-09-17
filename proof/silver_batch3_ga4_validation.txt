@@ -1,0 +1,40 @@
+Silver staging batch 3 GA4 validation
+Run date: 2026-09-17
+
+Dataform execution
+- Status: SUCCESS
+- Duration: 12 seconds
+- Actions: 4/4 succeeded
+- Model: stg_ga4_events (incremental, three-day rolling reprocessing window)
+
+Validation results
+- Click IDs carried consistently: observed 0 inconsistent; PASS
+- Event fingerprints unique: observed 0 duplicates; PASS
+- GA4 events loaded: observed 696,276; expected > 0; PASS
+- GA4 session IDs extracted: observed 0 missing; PASS
+- GA4 value anomalies detected: observed 222; expected > 0; PASS
+- Internal sessions detected: observed 1,973; expected > 0; PASS
+- Late GA4 events detected: observed 20,895; expected > 0; PASS
+- Latest two days provisional: observed 0 invalid; PASS
+- No authoritative GA4 revenue column: observed 0; PASS
+- Paid click IDs extracted: observed 163,584; expected > 0; PASS
+- Purchase transaction IDs unique: observed 0 duplicates; PASS
+- Source lineage retained: observed 0 missing; PASS
+- UTC to SAST report dates agree: observed 0 mismatches; PASS
+
+Result: 13/13 checks passed.
+
+Reconciliation
+- The simulator planted 1,973 internal sessions (DQ08); silver detected exactly 1,973.
+- The simulator planted 222 GA4 purchase-value anomalies (DQ06); silver detected exactly 222.
+- The source contained approximately 699,918 GA4 rows; fingerprint and purchase deduplication produced 696,276 silver events.
+- The local story check reported 20,902 late or re-sent GA4 events of all types; the deduplicated silver table retained 20,895 events whose delivery date differed from their event date.
+
+Coverage
+- DQ02: late arrivals and re-sends handled through a three-day incremental window and event fingerprints.
+- DQ06: inflated GA4 values detected; no authoritative revenue column exposed.
+- DQ08: internal sessions identified for exclusion by the conformed session model.
+- SH06: shuffled GA4 event parameters extracted by key.
+- SH07: click IDs and campaign parameters carried across their sessions.
+- SH08: UTC event timestamps converted to Africa/Johannesburg reporting dates.
+- Lineage: dt and source_file_name retained.
