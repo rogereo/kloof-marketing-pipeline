@@ -1,0 +1,32 @@
+Silver Batch 4 - Conformed Models Validation
+Project: kloof-marketing-pipeline
+Dataset: kloof_silver
+Validated: 2026-09-17
+
+check_name                              observed  expected       status
+All customer IDs mapped                5173      5,173          PASS
+Attributed orders unique               0         0              PASS
+Click-attributed orders present        4207      > 0            PASS
+Click-attributed sessions present      163584    > 0            PASS
+Creative ad IDs unique                 0         0              PASS
+Creative features loaded               17        17             PASS
+Creative features valid                0         0 invalid      PASS
+Customer IDs unique                    0         0              PASS
+Distinct people conformed              4841      4,841          PASS
+Every customer has customer_key        0         0              PASS
+Gemini JSON parsed                     0         0 fallbacks    PASS
+Gemini calls successful                0         0 errors       PASS
+Genuine orders loaded                  10033     10,033         PASS
+Internal sessions excluded             0         0              PASS
+Late customer placeholders created     3         3              PASS
+No raw PII in conformed models         0         0              PASS
+Order attribution valid                0         0              PASS
+Orders linked to customer keys         0         0 missing      PASS
+QA orders excluded                     0         0              PASS
+Session attribution valid              0         0              PASS
+Sessions linked to identities          37034     > 0            PASS
+Sessions loaded                        243536    > 0            PASS
+Sessions unique                        0         0              PASS
+Source lineage retained                0         0 missing      PASS
+
+Result: 24/24 checks passed.
