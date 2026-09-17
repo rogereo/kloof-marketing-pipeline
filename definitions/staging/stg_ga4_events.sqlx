@@ -1,0 +1,228 @@
+config {
+  type: "incremental",
+  schema: "kloof_silver",
+  uniqueKey: ["event_fingerprint"],
+  bigquery: {
+    partitionBy: "event_date",
+    clusterBy: ["event_name", "user_pseudo_id", "ga_session_id"]
+  },
+  tags: ["silver", "staging", "batch3", "ga4", "DQ02", "DQ06", "DQ08", "SH06", "SH07", "SH08"],
+  description: "Deduplicated GA4 events with typed parameters, session-level click IDs, UTC timestamps and SAST reporting dates. GA4 value is retained only as a clearly labelled diagnostic field; CRM remains authoritative for revenue.",
+  assertions: {
+    uniqueKey: ["event_fingerprint"],
+    nonNull: ["event_fingerprint", "event_date", "event_timestamp_utc", "event_name", "user_pseudo_id", "ga_session_id", "dt", "source_file_name"],
+    rowConditions: [
+      "report_date_sast = event_date",
+      "ga_session_id > 0",
+      "event_name != 'purchase' OR transaction_id IS NOT NULL"
+    ]
+  }
+}
+
+pre_operations {
+  DECLARE max_processed_load_date DATE DEFAULT (
+    ${when(
+      incremental(),
+      `SELECT COALESCE(MAX(dt), DATE "1900-01-01") FROM ${self()}`,
+      `SELECT DATE "1900-01-01"`
+    )}
+  );
+}
+
+WITH source AS (
+  SELECT
+    PARSE_DATE("%Y%m%d", event_date) AS event_date,
+    TIMESTAMP_MICROS(event_timestamp) AS event_timestamp_utc,
+    event_name,
+    event_params,
+    user_pseudo_id,
+    device.category AS device_category,
+    device.operating_system AS operating_system,
+    geo.country AS country,
+    geo.city AS city,
+    collected_traffic_source.manual_campaign_id AS collected_campaign_id,
+    collected_traffic_source.manual_campaign_name AS collected_campaign_name,
+    collected_traffic_source.manual_source AS collected_source,
+    collected_traffic_source.manual_medium AS collected_medium,
+    collected_traffic_source.manual_term AS collected_term,
+    collected_traffic_source.manual_content AS collected_content,
+    collected_traffic_source.gclid AS collected_gclid,
+    collected_traffic_source.dclid AS collected_dclid,
+    collected_traffic_source.srsltid AS collected_srsltid,
+    ecommerce.transaction_id AS ecommerce_transaction_id,
+    ecommerce.total_item_quantity AS total_item_quantity,
+    items,
+    dt,
+    _FILE_NAME AS source_file_name
+  FROM ${ref("ga4_events")}
+  WHERE ${when(
+    incremental(),
+    `dt >= DATE_SUB(max_processed_load_date, INTERVAL ${parseInt(dataform.projectConfig.vars.ga4LookbackDays, 10) - 1} DAY)`,
+    `TRUE`
+  )}
+),
+
+parameters AS (
+  SELECT
+    s.* EXCEPT(event_params),
+    (SELECT value.int_value FROM UNNEST(event_params) WHERE key = "ga_session_id" LIMIT 1) AS ga_session_id,
+    (SELECT value.int_value FROM UNNEST(event_params) WHERE key = "ga_session_number" LIMIT 1) AS ga_session_number,
+    (SELECT value.string_value FROM UNNEST(event_params) WHERE key = "page_location" LIMIT 1) AS page_location,
+    (SELECT value.string_value FROM UNNEST(event_params) WHERE key = "page_referrer" LIMIT 1) AS page_referrer,
+    (SELECT value.string_value FROM UNNEST(event_params) WHERE key = "page_title" LIMIT 1) AS page_title,
+    (SELECT value.string_value FROM UNNEST(event_params) WHERE key = "traffic_type" LIMIT 1) AS traffic_type,
+    (SELECT value.int_value FROM UNNEST(event_params) WHERE key = "engagement_time_msec" LIMIT 1) AS engagement_time_msec,
+    (SELECT value.string_value FROM UNNEST(event_params) WHERE key = "transaction_id" LIMIT 1) AS parameter_transaction_id,
+    COALESCE(
+      (SELECT value.double_value FROM UNNEST(event_params) WHERE key = "value" LIMIT 1),
+      (SELECT value.float_value FROM UNNEST(event_params) WHERE key = "value" LIMIT 1),
+      CAST((SELECT value.int_value FROM UNNEST(event_params) WHERE key = "value" LIMIT 1) AS FLOAT64)
+    ) AS ga4_reported_value,
+    (SELECT value.string_value FROM UNNEST(event_params) WHERE key = "currency" LIMIT 1) AS currency
+  FROM source AS s
+),
+
+event_click_ids AS (
+  SELECT
+    p.*,
+    COALESCE(
+      collected_gclid,
+      REGEXP_EXTRACT(page_location, r"(?i)[?&]gclid=([^&#]+)")
+    ) AS event_gclid,
+    COALESCE(
+      collected_dclid,
+      REGEXP_EXTRACT(page_location, r"(?i)[?&]dclid=([^&#]+)")
+    ) AS event_dclid,
+    COALESCE(
+      collected_srsltid,
+      REGEXP_EXTRACT(page_location, r"(?i)[?&]srsltid=([^&#]+)")
+    ) AS event_srsltid,
+    REGEXP_EXTRACT(page_location, r"(?i)[?&]fbclid=([^&#]+)") AS event_fbclid,
+    COALESCE(
+      collected_campaign_id,
+      REGEXP_EXTRACT(page_location, r"(?i)[?&]utm_id=([^&#]+)")
+    ) AS event_campaign_id,
+    COALESCE(
+      collected_campaign_name,
+      REGEXP_EXTRACT(page_location, r"(?i)[?&]utm_campaign=([^&#]+)")
+    ) AS event_campaign_name,
+    COALESCE(
+      collected_source,
+      REGEXP_EXTRACT(page_location, r"(?i)[?&]utm_source=([^&#]+)")
+    ) AS event_source,
+    COALESCE(
+      collected_medium,
+      REGEXP_EXTRACT(page_location, r"(?i)[?&]utm_medium=([^&#]+)")
+    ) AS event_medium,
+    COALESCE(
+      collected_term,
+      REGEXP_EXTRACT(page_location, r"(?i)[?&]utm_term=([^&#]+)")
+    ) AS event_term,
+    COALESCE(
+      collected_content,
+      REGEXP_EXTRACT(page_location, r"(?i)[?&]utm_content=([^&#]+)")
+    ) AS event_content
+  FROM parameters AS p
+),
+
+session_enriched AS (
+  SELECT
+    * EXCEPT(
+      event_gclid,
+      event_dclid,
+      event_srsltid,
+      event_fbclid,
+      event_campaign_id,
+      event_campaign_name,
+      event_source,
+      event_medium,
+      event_term,
+      event_content,
+      ecommerce_transaction_id,
+      parameter_transaction_id
+    ),
+    MAX(event_gclid) OVER session_window AS session_gclid,
+    MAX(event_dclid) OVER session_window AS session_dclid,
+    MAX(event_srsltid) OVER session_window AS session_srsltid,
+    MAX(event_fbclid) OVER session_window AS session_fbclid,
+    MAX(event_campaign_id) OVER session_window AS session_campaign_id,
+    MAX(event_campaign_name) OVER session_window AS session_campaign_name,
+    MAX(event_source) OVER session_window AS session_source,
+    MAX(event_medium) OVER session_window AS session_medium,
+    MAX(event_term) OVER session_window AS session_term,
+    MAX(event_content) OVER session_window AS session_content,
+    COALESCE(ecommerce_transaction_id, parameter_transaction_id) AS transaction_id
+  FROM event_click_ids
+  WINDOW session_window AS (
+    PARTITION BY user_pseudo_id, ga_session_id
+  )
+),
+
+fingerprinted AS (
+  SELECT
+    TO_HEX(SHA256(CONCAT(
+      user_pseudo_id,
+      "|",
+      CAST(event_timestamp_utc AS STRING),
+      "|",
+      event_name,
+      "|",
+      CAST(ga_session_id AS STRING)
+    ))) AS event_fingerprint,
+    event_date,
+    event_timestamp_utc,
+    DATE(event_timestamp_utc, "Africa/Johannesburg") AS report_date_sast,
+    event_name,
+    user_pseudo_id,
+    ga_session_id,
+    ga_session_number,
+    page_location,
+    page_referrer,
+    page_title,
+    engagement_time_msec,
+    device_category,
+    operating_system,
+    country,
+    city,
+    session_gclid,
+    session_dclid,
+    session_srsltid,
+    session_fbclid,
+    session_campaign_id,
+    session_campaign_name,
+    session_source,
+    session_medium,
+    session_term,
+    session_content,
+    transaction_id,
+    ga4_reported_value,
+    currency,
+    total_item_quantity,
+    items,
+    COALESCE(LOWER(traffic_type) = "internal", FALSE) AS is_internal_traffic,
+    event_date >= DATE_SUB(MAX(event_date) OVER (), INTERVAL 1 DAY) AS is_provisional,
+    event_date != dt AS arrived_late,
+    dt,
+    source_file_name
+  FROM session_enriched
+),
+
+fingerprint_deduplicated AS (
+  SELECT *
+  FROM fingerprinted
+  QUALIFY ROW_NUMBER() OVER (
+    PARTITION BY event_fingerprint
+    ORDER BY dt DESC, source_file_name DESC
+  ) = 1
+)
+
+SELECT *
+FROM fingerprint_deduplicated
+QUALIFY ROW_NUMBER() OVER (
+  PARTITION BY IF(
+    event_name = "purchase" AND transaction_id IS NOT NULL,
+    CONCAT("purchase|", transaction_id),
+    CONCAT("event|", event_fingerprint)
+  )
+  ORDER BY event_timestamp_utc, dt DESC, source_file_name DESC
+) = 1

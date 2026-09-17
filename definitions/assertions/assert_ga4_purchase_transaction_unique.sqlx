@@ -1,0 +1,13 @@
+config {
+  type: "assertion",
+  tags: ["silver", "batch3", "ga4", "DQ02", "DQ06"],
+  description: "Every GA4 purchase transaction ID appears at most once after resend and thank-you-page deduplication."
+}
+
+SELECT
+  transaction_id,
+  COUNT(*) AS event_count
+FROM ${ref("stg_ga4_events")}
+WHERE event_name = "purchase"
+GROUP BY transaction_id
+HAVING COUNT(*) > 1
