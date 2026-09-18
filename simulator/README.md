@@ -9,11 +9,9 @@ customers who will be worth the most over the next 90 days?*
 
 | Document | What it covers |
 |---|---|
-| `PROJECT_BRIEF.md` | What to build, step by step, and what to deliver |
 | `DATA_DICTIONARY.md` | Every file, column, grain and join key |
 | `KNOWN_ISSUES.md` | 11 shape issues and 12 planted data quality issues, with fixes and checks |
 | `schemas/` | BigQuery schemas for the bronze tables |
-| `AI_USAGE.md` | How AI tools were used in this project |
 
 ## Quick start
 
