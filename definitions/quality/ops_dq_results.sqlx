@@ -36,6 +36,7 @@ crm_customers_raw AS (
   SELECT
     NULLIF(TRIM(customer_id), "") AS customer_id,
     NULLIF(LOWER(TRIM(email)), "") AS normalized_email,
+    city AS raw_city,
     LOWER(REGEXP_REPLACE(TRIM(city), r"[\s_-]+", " ")) AS normalized_city,
     dt
   FROM ${ref("crm_customers")}
@@ -228,7 +229,7 @@ detectors AS (
   SELECT
     "DQ09", "crm_customers", "customers",
     COUNT(DISTINCT IF(
-      normalized_city NOT IN ("cape town", "johannesburg", "durban"),
+      raw_city NOT IN ("Cape Town", "Johannesburg", "Durban"),
       customer_id,
       NULL
     )),
